@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 
 const Register = () => {
   const [formData, setFormData] = useState({
@@ -12,7 +13,9 @@ const Register = () => {
   const [preview, setPreview] = useState(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const navigate = useNavigate();
 
+  // handle input change
   const handleChange = (e) => {
     const { name, value, files } = e.target;
 
@@ -32,6 +35,7 @@ const Register = () => {
     }
   };
 
+  // handle form submit
   const handleSubmit = async (e) => {
     e.preventDefault();
 
@@ -64,21 +68,21 @@ const Register = () => {
       if (!response.ok) {
         setError(result.message || 'Something went wrong');
       } else {
-        alert('Registration successful');
-        setFormData({
-          name: '',
-          email: '',
-          password: '',
-          confirmPassword: '',
-          profilePicture: null,
-        });
-        setPreview(null);
+        alert('Registration successful ✅');
+
+        // ✅ Save user to localStorage immediately
+        if (result.user) {
+          localStorage.setItem('user', JSON.stringify(result.user));
+          navigate('/dashboard'); // auto-login after register
+        } else {
+          navigate('/'); // fallback → go to login
+        }
       }
     } catch (err) {
       setError('Server error: ' + err.message);
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false);
   };
 
   return (
