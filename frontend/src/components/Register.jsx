@@ -1,82 +1,76 @@
 import React, { useState } from 'react';
+import { Eye, EyeOff, Mail, Lock, User, Camera, Sparkles } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import '../index.css';
 
-const Register = () => {
+const Register = ({ onRegister }) => {
   const [formData, setFormData] = useState({
     name: '',
     email: '',
     password: '',
-    confirmPassword: '',
-    profilePicture: null,
+    confirmPassword: ''
   });
-
-  const [preview, setPreview] = useState(null);
+  const [profilePicture, setProfilePicture] = useState(null);
+  const [previewUrl, setPreviewUrl] = useState(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+
   const navigate = useNavigate();
 
-  // handle input change
   const handleChange = (e) => {
-    const { name, value, files } = e.target;
+    const { name, value } = e.target;
+    setFormData((prev) => ({ ...prev, [name]: value }));
+  };
 
-    if (name === 'profilePicture') {
-      const file = files[0];
-      setFormData((prev) => ({ ...prev, profilePicture: file }));
-
-      if (file) {
-        const reader = new FileReader();
-        reader.onloadend = () => setPreview(reader.result);
-        reader.readAsDataURL(file);
-      } else {
-        setPreview(null);
-      }
-    } else {
-      setFormData((prev) => ({ ...prev, [name]: value }));
+  const handleFileChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      setProfilePicture(file);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setPreviewUrl(reader.result);
+      };
+      reader.readAsDataURL(file);
     }
   };
 
-  // handle form submit
   const handleSubmit = async (e) => {
     e.preventDefault();
-
+    setError('');
+    
     if (formData.password !== formData.confirmPassword) {
       setError('Passwords do not match');
       return;
     }
 
-    setError('');
     setLoading(true);
 
     try {
-      const data = new FormData();
-      data.append('name', formData.name);
-      data.append('email', formData.email);
-      data.append('password', formData.password);
-      data.append('confirmPassword', formData.confirmPassword);
-
-      if (formData.profilePicture) {
-        data.append('profilePicture', formData.profilePicture);
+      const submitData = new FormData();
+      submitData.append('name', formData.name);
+      submitData.append('email', formData.email);
+      submitData.append('password', formData.password);
+      submitData.append('confirmPassword', formData.confirmPassword);
+      
+      if (profilePicture) {
+        submitData.append('profilePicture', profilePicture);
       }
 
       const response = await fetch('http://localhost:5000/register', {
         method: 'POST',
-        body: data,
+        body: submitData,
       });
 
       const result = await response.json();
 
       if (!response.ok) {
-        setError(result.message || 'Something went wrong');
+        setError(result.message || 'Registration failed');
       } else {
-        alert('Registration successful ✅');
-
-        // ✅ Save user to localStorage immediately
-        if (result.user) {
-          localStorage.setItem('user', JSON.stringify(result.user));
-          navigate('/dashboard'); // auto-login after register
-        } else {
-          navigate('/'); // fallback → go to login
-        }
+        // Auto-login after successful registration
+        onRegister(result.user);
+        navigate('/dashboard');
       }
     } catch (err) {
       setError('Server error: ' + err.message);
@@ -86,74 +80,138 @@ const Register = () => {
   };
 
   return (
-    <div style={{ maxWidth: '400px', margin: '0 auto' }}>
-      <h2>Register</h2>
-      <form onSubmit={handleSubmit}>
-        <div>
-          <label>Name:</label><br />
-          <input
-            type="text"
-            name="name"
-            value={formData.name}
-            onChange={handleChange}
-            required
-          />
+    <div className="login-page">
+      {/* Background circles */}
+      <div className="bg-circles">
+        <div className="circle purple"></div>
+        <div className="circle blue"></div>
+        <div className="circle indigo"></div>
+      </div>
+
+      <div className="login-container">
+        {/* Logo */}
+        <div className="login-logo">
+          <div className="logo-box">
+            <Sparkles className="logo-icon" />
+          </div>
+          <h1>Join SocialSphere</h1>
+          <p>Create your account and start connecting</p>
         </div>
 
-        <div>
-          <label>Email:</label><br />
-          <input
-            type="email"
-            name="email"
-            value={formData.email}
-            onChange={handleChange}
-            required
-          />
-        </div>
-
-        <div>
-          <label>Password:</label><br />
-          <input
-            type="password"
-            name="password"
-            value={formData.password}
-            onChange={handleChange}
-            required
-          />
-        </div>
-
-        <div>
-          <label>Confirm Password:</label><br />
-          <input
-            type="password"
-            name="confirmPassword"
-            value={formData.confirmPassword}
-            onChange={handleChange}
-            required
-          />
-        </div>
-
-        <div>
-          <label>Profile Picture:</label><br />
-          <input
-            type="file"
-            name="profilePicture"
-            accept="image/*"
-            onChange={handleChange}
-          />
-          {preview && (
-            <div style={{ marginTop: '10px' }}>
-              <img src={preview} alt="Preview" width="100" />
+        <form onSubmit={handleSubmit} className="login-form">
+          {/* Profile Picture */}
+          <div className="mb-4 text-center">
+            <div className="relative inline-block">
+              <div className="w-20 h-20 rounded-full border-2 border-gray-300 overflow-hidden bg-gray-100 mx-auto">
+                {previewUrl ? (
+                  <img
+                    src={previewUrl}
+                    alt="Preview"
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-gray-400">
+                    <User size={32} />
+                  </div>
+                )}
+              </div>
+              <label className="absolute bottom-0 right-0 bg-blue-500 text-white rounded-full p-1 cursor-pointer hover:bg-blue-600 transition">
+                <Camera size={16} />
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleFileChange}
+                  className="hidden"
+                />
+              </label>
             </div>
-          )}
+            <p className="text-xs text-gray-600 mt-2">Optional profile picture</p>
+          </div>
+
+          {/* Name */}
+          <div className="input-group">
+            <User className="input-icon" />
+            <input
+              type="text"
+              name="name"
+              value={formData.name}
+              onChange={handleChange}
+              placeholder="Enter your full name"
+              required
+            />
+          </div>
+
+          {/* Email */}
+          <div className="input-group">
+            <Mail className="input-icon" />
+            <input
+              type="email"
+              name="email"
+              value={formData.email}
+              onChange={handleChange}
+              placeholder="Enter your email"
+              required
+            />
+          </div>
+
+          {/* Password */}
+          <div className="input-group">
+            <Lock className="input-icon" />
+            <input
+              type={showPassword ? 'text' : 'password'}
+              name="password"
+              value={formData.password}
+              onChange={handleChange}
+              placeholder="Create a password"
+              required
+            />
+            <button
+              type="button"
+              className="toggle-btn"
+              onClick={() => setShowPassword(!showPassword)}
+            >
+              {showPassword ? <EyeOff /> : <Eye />}
+            </button>
+          </div>
+
+          {/* Confirm Password */}
+          <div className="input-group">
+            <Lock className="input-icon" />
+            <input
+              type={showConfirmPassword ? 'text' : 'password'}
+              name="confirmPassword"
+              value={formData.confirmPassword}
+              onChange={handleChange}
+              placeholder="Confirm your password"
+              required
+            />
+            <button
+              type="button"
+              className="toggle-btn"
+              onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+            >
+              {showConfirmPassword ? <EyeOff /> : <Eye />}
+            </button>
+          </div>
+
+          {/* Error */}
+          {error && <div className="error-box">{error}</div>}
+
+          {/* Button */}
+          <button type="submit" className="login-btn" disabled={loading}>
+            {loading ? 'Creating Account...' : 'Create Account'}
+          </button>
+        </form>
+
+        <div className="extra-links">
+          <p>
+            Already have an account?{' '}
+            <button onClick={() => navigate('/login')}>
+              Sign in here
+            </button>
+          </p>
         </div>
-
-        {error && <p style={{ color: 'red' }}>{error}</p>}
-
-        <button type="submit" style={{ marginTop: '10px' }} disabled={loading}>
-          {loading ? 'Registering...' : 'Register'}
-        </button>
-      </form>
+      </div>
     </div>
   );
 };

@@ -1,10 +1,14 @@
 import React, { useState } from 'react';
+import { Eye, EyeOff, Mail, Lock, Sparkles } from 'lucide-react';
+import '../index.css'; // Import normal CSS
 import { useNavigate } from 'react-router-dom';
 
-const LoginForm = () => {
+const LoginForm = ({ onLogin }) => {
   const [formData, setFormData] = useState({ email: '', password: '' });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+
   const navigate = useNavigate();
 
   const handleChange = (e) => {
@@ -29,9 +33,9 @@ const LoginForm = () => {
       if (!response.ok) {
         setError(result.message || 'Invalid email or password');
       } else {
-        alert('Login successful ✅');
-        localStorage.setItem('user', JSON.stringify(result.user));
-        navigate('/dashboard'); // redirect to dashboard
+        // Call the onLogin function passed from App component
+        onLogin(result.user);
+        navigate('/dashboard');
       }
     } catch (err) {
       setError('Server error: ' + err.message);
@@ -41,47 +45,77 @@ const LoginForm = () => {
   };
 
   return (
-    <div style={{ maxWidth: '400px', margin: '0 auto' }}>
-      <h2>Login</h2>
-      <form onSubmit={handleSubmit}>
-        <div>
-          <label>Email:</label><br />
-          <input
-            type="email"
-            name="email"
-            value={formData.email}
-            onChange={handleChange}
-            required
-          />
+    <div className="login-page">
+      {/* Background circles */}
+      <div className="bg-circles">
+        <div className="circle purple"></div>
+        <div className="circle blue"></div>
+        <div className="circle indigo"></div>
+      </div>
+
+      <div className="login-container">
+        {/* Logo */}
+        <div className="login-logo">
+          <div className="logo-box">
+            <Sparkles className="logo-icon" />
+          </div>
+          <h1>SocialSphere</h1>
+          <p>Connect with your world</p>
         </div>
 
-        <div>
-          <label>Password:</label><br />
-          <input
-            type="password"
-            name="password"
-            value={formData.password}
-            onChange={handleChange}
-            required
-          />
+        <form onSubmit={handleSubmit} className="login-form">
+          {/* Email */}
+          <div className="input-group">
+            <Mail className="input-icon" />
+            <input
+              type="email"
+              name="email"
+              value={formData.email}
+              onChange={handleChange}
+              placeholder="Enter your email"
+              required
+            />
+          </div>
+
+          {/* Password */}
+          <div className="input-group">
+            <Lock className="input-icon" />
+            <input
+              type={showPassword ? 'text' : 'password'}
+              name="password"
+              value={formData.password}
+              onChange={handleChange}
+              placeholder="Enter your password"
+              required
+            />
+            <button
+              type="button"
+              className="toggle-btn"
+              onClick={() => setShowPassword(!showPassword)}
+            >
+              {showPassword ? <EyeOff /> : <Eye />}
+            </button>
+          </div>
+
+          {/* Error */}
+          {error && <div className="error-box">{error}</div>}
+
+          {/* Button */}
+          <button type="submit" className="login-btn" disabled={loading}>
+            {loading ? 'Signing In...' : 'Sign In'}
+          </button>
+        </form>
+
+        <div className="extra-links">
+          <p>
+            Don't have an account?{' '}
+            <button onClick={() => navigate('/register')}>
+              Create one now
+            </button>
+          </p>
+          <button className="forgot-btn">Forgot your password?</button>
         </div>
-
-        {error && <p style={{ color: 'red' }}>{error}</p>}
-
-        <button type="submit" style={{ marginTop: '10px' }} disabled={loading}>
-          {loading ? 'Logging in...' : 'Login'}
-        </button>
-      </form>
-
-      <p style={{ marginTop: '15px' }}>
-        Don’t have an account?{" "}
-        <span
-          style={{ color: 'blue', cursor: 'pointer', textDecoration: 'underline' }}
-          onClick={() => navigate('/register')}
-        >
-          Register here
-        </span>
-      </p>
+      </div>
     </div>
   );
 };
