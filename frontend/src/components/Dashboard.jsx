@@ -4,21 +4,30 @@ const Dashboard = ({ onLogout }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [showEditModal, setShowEditModal] = useState(false);
+  const [showProfileModal, setShowProfileModal] = useState(false);
+  const [posts, setPosts] = useState([]);
+  const [postsLoading, setPostsLoading] = useState(false);
   const [bio, setBio] = useState("");
   const [updating, setUpdating] = useState(false);
-  const [profileFile, setProfileFile] = useState(null);
   const [uploadingProfile, setUploadingProfile] = useState(false);
+  const [commentTexts, setCommentTexts] = useState({});
+  const [submittingComment, setSubmittingComment] = useState({});
 
   useEffect(() => {
     fetchUserData();
   }, []);
 
+  useEffect(() => {
+    if (user) {
+      fetchAllPosts(); // Changed from fetchUserPosts to fetchAllPosts
+    }
+  }, [user]);
+
   const fetchUserData = async () => {
     try {
       setLoading(true);
       
-      // Get user from localStorage (or your auth system)
+      // Get user from localStorage
       const storedUser = localStorage.getItem("user");
       if (!storedUser) {
         setError("No user found. Please login again.");
@@ -53,6 +62,122 @@ const Dashboard = ({ onLogout }) => {
     }
   };
 
+  // Changed function name and endpoint to fetch all posts
+  const fetchAllPosts = async () => {
+    if (!user) return;
+    
+    try {
+      setPostsLoading(true);
+      
+      const response = await fetch(`http://localhost:5000/posts?userId=${user._id}`, {
+        method: 'GET',
+        credentials: 'include'
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch posts');
+      }
+
+      const data = await response.json();
+      setPosts(data.posts || []);
+      
+    } catch (err) {
+      console.error('Error fetching posts:', err);
+    } finally {
+      setPostsLoading(false);
+    }
+  };
+
+  const handleAddComment = async (postId) => {
+    const commentText = commentTexts[postId];
+    if (!commentText || !commentText.trim()) return;
+
+    try {
+      setSubmittingComment(prev => ({ ...prev, [postId]: true }));
+      
+      const response = await fetch('http://localhost:5000/add-comment', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          userId: user._id,
+          postId: postId,
+          text: commentText.trim()
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to add comment');
+      }
+
+      const data = await response.json();
+      
+      // Update the specific post with new comment
+      setPosts(prevPosts => 
+        prevPosts.map(post => {
+          if (post._id === postId) {
+            return {
+              ...post,
+              comments: [...post.comments, data.comment],
+              commentCount: data.commentCount
+            };
+          }
+          return post;
+        })
+      );
+      
+      // Clear comment text
+      setCommentTexts(prev => ({ ...prev, [postId]: '' }));
+      
+    } catch (err) {
+      console.error('Error adding comment:', err);
+      alert(err.message || 'Failed to add comment');
+    } finally {
+      setSubmittingComment(prev => ({ ...prev, [postId]: false }));
+    }
+  };
+
+  const handleReaction = async (postId, reactionType) => {
+    try {
+      const response = await fetch('http://localhost:5000/add-reaction', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          userId: user._id,
+          postId: postId,
+          reactionType: reactionType
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to add reaction');
+      }
+
+      const data = await response.json();
+      
+      // Update the specific post with new reaction data
+      setPosts(prevPosts => 
+        prevPosts.map(post => {
+          if (post._id === postId) {
+            return data.post;
+          }
+          return post;
+        })
+      );
+      
+    } catch (err) {
+      console.error('Error adding reaction:', err);
+      alert(err.message || 'Failed to add reaction');
+    }
+  };
+
   const handleUpdateBio = async () => {
     if (!user) return;
     
@@ -79,8 +204,6 @@ const Dashboard = ({ onLogout }) => {
       const updatedUser = { ...user, bio: data.bio };
       setUser(updatedUser);
       localStorage.setItem("user", JSON.stringify(updatedUser));
-      
-      setShowEditModal(false);
       
     } catch (err) {
       console.error('Error updating bio:', err);
@@ -126,33 +249,26 @@ const Dashboard = ({ onLogout }) => {
     }
   };
 
-  const handleLogout = () => {
-    // Clear user data from localStorage
-    localStorage.removeItem("user");
-    localStorage.removeItem("token");
+  const formatDate = (dateString) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffInHours = (now - date) / (1000 * 60 * 60);
     
-    if (onLogout) {
-      onLogout();
-    } else {
-      // Fallback - reload page to trigger login flow
-      window.location.reload();
-    }
+    if (diffInHours < 1) return 'Just now';
+    if (diffInHours < 24) return `${Math.floor(diffInHours)}h ago`;
+    if (diffInHours < 168) return `${Math.floor(diffInHours / 24)}d ago`;
+    return date.toLocaleDateString();
   };
 
   if (loading) {
     return (
-      <div className="login-page">
-        <div className="bg-circles">
-          <div className="circle purple"></div>
-          <div className="circle blue"></div>
-          <div className="circle indigo"></div>
-        </div>
-        <div className="login-container fade-in">
-          <div className="login-logo">
-            <div className="spinner" style={{ width: '40px', height: '40px', margin: '0 auto 20px' }}></div>
-            <h1>Loading Dashboard</h1>
-            <p>Fetching your data...</p>
+      <div className="d-flex justify-content-center align-items-center" style={{ height: '100vh', background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}>
+        <div className="text-center text-white">
+          <div className="spinner-border text-light mb-3" role="status">
+            <span className="visually-hidden">Loading...</span>
           </div>
+          <h4>Loading Dashboard</h4>
+          <p>Fetching your data...</p>
         </div>
       </div>
     );
@@ -160,397 +276,434 @@ const Dashboard = ({ onLogout }) => {
 
   if (error || !user) {
     return (
-      <div className="login-page">
-        <div className="bg-circles">
-          <div className="circle purple"></div>
-          <div className="circle blue"></div>
-          <div className="circle indigo"></div>
-        </div>
-        <div className="login-container fade-in">
-          <div className="login-logo">
-            <div className="logo-box">
-              <svg className="logo-icon" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
-              </svg>
-            </div>
-            <h1>Error Loading Dashboard</h1>
-            <p>{error || "Please login to view your dashboard"}</p>
-          </div>
-          <div className="login-form">
-            <button className="login-btn" onClick={() => window.location.href = '/login'}>
-              Go to Login
-            </button>
-            <button 
-              onClick={fetchUserData}
-              style={{
-                width: '100%',
-                padding: '12px',
-                background: 'rgba(102, 126, 234, 0.1)',
-                color: '#667eea',
-                border: '2px solid #E5E7EB',
-                borderRadius: '12px',
-                fontSize: '14px',
-                fontWeight: '600',
-                cursor: 'pointer',
-                marginTop: '8px'
-              }}
-            >
-              Retry
-            </button>
-          </div>
+      <div className="d-flex justify-content-center align-items-center" style={{ height: '100vh', background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}>
+        <div className="text-center text-white">
+          <h4>Error Loading Dashboard</h4>
+          <p>{error || "Please login to view your dashboard"}</p>
+          <button className="btn btn-light mt-3" onClick={fetchUserData}>
+            Retry
+          </button>
         </div>
       </div>
     );
   }
 
-  return (
-    <div className="login-page">
-      {/* Animated Background Circles */}
-      <div className="bg-circles">
-        <div className="circle purple"></div>
-        <div className="circle blue"></div>
-        <div className="circle indigo"></div>
-      </div>
+  // Calculate user's own post count for the profile card
+  const userPostCount = posts.filter(post => post.author._id === user._id).length;
 
-      {/* Main Dashboard Container */}
-      <div className="login-container fade-in" style={{ maxWidth: '480px' }}>
-        {/* Header Section */}
-        <div className="login-logo">
-          <div className="profile-upload-container">
-            <div className="profile-preview" style={{ width: '100px', height: '100px' }}>
-              {uploadingProfile ? (
-                <div className="spinner" style={{ width: '20px', height: '20px' }}></div>
+  return (
+    <>
+      {/* Bootstrap CSS */}
+      <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/css/bootstrap.min.css" rel="stylesheet" />
+      <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.10.0/font/bootstrap-icons.min.css" />
+      
+      {/* Main Dashboard */}
+      <div style={{ 
+        minHeight: '100vh', 
+        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+        padding: '20px'
+      }}>
+        <div className="container">
+          <div className="row">
+            {/* User Info Card */}
+            <div className="col-md-4 mb-4">
+              <div className="card shadow-lg border-0" style={{ borderRadius: '20px', position: 'sticky', top: '20px' }}>
+                <div className="card-body text-center p-4">
+                  {/* Profile Picture */}
+                  <div className="position-relative d-inline-block mb-3">
+                    <img
+                      src={user.profilePicture ? `http://localhost:5000${user.profilePicture}` : "https://via.placeholder.com/100x100/667eea/white?text=" + user.name.charAt(0)}
+                      alt="Profile"
+                      className="rounded-circle"
+                      style={{ width: '100px', height: '100px', objectFit: 'cover', border: '4px solid #fff', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
+                    />
+                  </div>
+
+                  {/* User Info */}
+                  <h4 className="card-title fw-bold mb-1">{user.name}</h4>
+                  <p className="text-muted mb-3">{user.email}</p>
+
+                  {/* Stats */}
+                  <div className="row text-center mb-4">
+                    <div className="col-4">
+                      <h5 className="fw-bold text-primary mb-0">{userPostCount}</h5>
+                      <small className="text-muted">Posts</small>
+                    </div>
+                    <div className="col-4">
+                      <h5 className="fw-bold text-primary mb-0">{user.followers}</h5>
+                      <small className="text-muted">Followers</small>
+                    </div>
+                    <div className="col-4">
+                      <h5 className="fw-bold text-primary mb-0">{user.following}</h5>
+                      <small className="text-muted">Following</small>
+                    </div>
+                  </div>
+
+                  {/* Profile Button */}
+                  <button 
+                    className="btn btn-primary btn-lg w-100 rounded-pill"
+                    onClick={() => setShowProfileModal(true)}
+                    style={{ 
+                      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                      border: 'none',
+                      fontWeight: '600'
+                    }}
+                  >
+                    <i className="bi bi-person-circle me-2"></i>
+                    View Profile Details
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Posts Section */}
+            <div className="col-md-8">
+              <div className="d-flex justify-content-between align-items-center mb-4">
+                <h3 className="text-white fw-bold mb-0">All Posts</h3>
+                <button 
+                  className="btn btn-light rounded-pill"
+                  onClick={fetchAllPosts}
+                  disabled={postsLoading}
+                >
+                  {postsLoading ? (
+                    <span className="spinner-border spinner-border-sm me-2" role="status"></span>
+                  ) : (
+                    <i className="bi bi-arrow-clockwise me-2"></i>
+                  )}
+                  Refresh
+                </button>
+              </div>
+
+              {postsLoading ? (
+                <div className="text-center text-white">
+                  <div className="spinner-border mb-3" role="status">
+                    <span className="visually-hidden">Loading posts...</span>
+                  </div>
+                  <p>Loading all posts...</p>
+                </div>
+              ) : posts.length === 0 ? (
+                <div className="card border-0 shadow-sm" style={{ borderRadius: '20px' }}>
+                  <div className="card-body text-center p-5">
+                    <i className="bi bi-camera2 text-muted" style={{ fontSize: '3rem' }}></i>
+                    <h5 className="mt-3 text-muted">No posts yet</h5>
+                    <p className="text-muted">Be the first to share something!</p>
+                  </div>
+                </div>
               ) : (
-                <img
-                  src={user.profilePicture ? `http://localhost:5000${user.profilePicture}` : "/api/placeholder/100/100"}
-                  alt="Profile"
-                  onError={(e) => {
-                    e.target.src = "/api/placeholder/100/100";
-                  }}
-                />
+                <div className="posts-container">
+                  {posts.map((post) => (
+                    <div key={post._id} className="card border-0 shadow-sm mb-4" style={{ borderRadius: '20px' }}>
+                      {/* Post Header */}
+                      <div className="card-header border-0 bg-white" style={{ borderRadius: '20px 20px 0 0' }}>
+                        <div className="d-flex align-items-center">
+                          <img
+                            src={post.author.profilePicture ? `http://localhost:5000${post.author.profilePicture}` : "https://via.placeholder.com/40x40/667eea/white?text=" + post.author.name.charAt(0)}
+                            alt={post.author.name}
+                            className="rounded-circle me-3"
+                            style={{ width: '40px', height: '40px', objectFit: 'cover' }}
+                          />
+                          <div className="flex-grow-1">
+                            <h6 className="mb-0 fw-bold">{post.author.name}</h6>
+                            <small className="text-muted">{formatDate(post.createdAt)}</small>
+                          </div>
+                          {/* Show "You" indicator for user's own posts */}
+                          {post.author._id === user._id && (
+                            <span className="badge bg-primary rounded-pill">You</span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="card-body p-0">
+                        {/* Post Image/Video */}
+                        {post.image && (
+                          <div className="position-relative">
+                            {post.image.includes('.mp4') || post.image.includes('.mov') || post.image.includes('.avi') ? (
+                              <video 
+                                controls 
+                                className="w-100" 
+                                style={{ maxHeight: '400px', objectFit: 'cover' }}
+                                src={`http://localhost:5000${post.image}`}
+                              />
+                            ) : (
+                              <img 
+                                src={`http://localhost:5000${post.image}`} 
+                                alt="Post content" 
+                                className="w-100"
+                                style={{ maxHeight: '400px', objectFit: 'cover' }}
+                              />
+                            )}
+                          </div>
+                        )}
+
+                        {/* Post Content */}
+                        <div className="p-3">
+                          <p className="mb-3">{post.text}</p>
+
+                          {/* Reactions */}
+                          <div className="d-flex justify-content-between align-items-center mb-3">
+                            <div className="d-flex gap-3">
+                              {['like', 'love', 'laugh', 'wow', 'sad', 'angry'].map((reactionType) => {
+                                const count = post.reactions[reactionType] || 0;
+                                const isActive = post.userReaction === reactionType;
+                                const icons = {
+                                  like: '👍',
+                                  love: '❤️',
+                                  laugh: '😂',
+                                  wow: '😮',
+                                  sad: '😢',
+                                  angry: '😠'
+                                };
+                                
+                                return (
+                                  <button
+                                    key={reactionType}
+                                    className={`btn btn-sm ${isActive ? 'btn-primary' : 'btn-outline-secondary'} rounded-pill`}
+                                    onClick={() => handleReaction(post._id, reactionType)}
+                                    style={{ minWidth: '60px' }}
+                                  >
+                                    <span className="me-1">{icons[reactionType]}</span>
+                                    {count > 0 && <span>{count}</span>}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                            <small className="text-muted">
+                              {post.commentCount} comment{post.commentCount !== 1 ? 's' : ''}
+                            </small>
+                          </div>
+
+                          {/* Comments */}
+                          {post.comments && post.comments.length > 0 && (
+                            <div className="mb-3">
+                              <h6 className="fw-bold mb-2">Comments</h6>
+                              <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
+                                {post.comments.map((comment, index) => (
+                                  <div key={index} className="d-flex mb-2">
+                                    <img
+                                      src={comment.author.profilePicture ? `http://localhost:5000${comment.author.profilePicture}` : "https://via.placeholder.com/32x32/667eea/white?text=" + comment.author.name.charAt(0)}
+                                      alt={comment.author.name}
+                                      className="rounded-circle me-2"
+                                      style={{ width: '32px', height: '32px', objectFit: 'cover' }}
+                                    />
+                                    <div className="flex-grow-1">
+                                      <div className="bg-light rounded p-2">
+                                        <h6 className="mb-1 fw-semibold" style={{ fontSize: '0.9rem' }}>
+                                          {comment.author.name}
+                                          {comment.author._id === user._id && (
+                                            <span className="badge bg-primary ms-1" style={{ fontSize: '0.6rem' }}>You</span>
+                                          )}
+                                        </h6>
+                                        <p className="mb-0" style={{ fontSize: '0.85rem' }}>{comment.text}</p>
+                                      </div>
+                                      <small className="text-muted ms-2">{formatDate(comment.createdAt)}</small>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Add Comment */}
+                          <div className="d-flex gap-2">
+                            <img
+                              src={user.profilePicture ? `http://localhost:5000${user.profilePicture}` : "https://via.placeholder.com/32x32/667eea/white?text=" + user.name.charAt(0)}
+                              alt="Your profile"
+                              className="rounded-circle"
+                              style={{ width: '32px', height: '32px', objectFit: 'cover' }}
+                            />
+                            <div className="flex-grow-1">
+                              <div className="input-group">
+                                <input
+                                  type="text"
+                                  className="form-control rounded-pill"
+                                  placeholder="Write a comment..."
+                                  value={commentTexts[post._id] || ''}
+                                  onChange={(e) => setCommentTexts(prev => ({ ...prev, [post._id]: e.target.value }))}
+                                  onKeyPress={(e) => {
+                                    if (e.key === 'Enter') {
+                                      handleAddComment(post._id);
+                                    }
+                                  }}
+                                  disabled={submittingComment[post._id]}
+                                />
+                                <button
+                                  className="btn btn-primary rounded-pill ms-2"
+                                  onClick={() => handleAddComment(post._id)}
+                                  disabled={submittingComment[post._id] || !commentTexts[post._id]?.trim()}
+                                >
+                                  {submittingComment[post._id] ? (
+                                    <span className="spinner-border spinner-border-sm" role="status"></span>
+                                  ) : (
+                                    <i className="bi bi-send"></i>
+                                  )}
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
-            <div className="profile-upload-btn">
-              <input 
-                type="file" 
-                accept="image/*" 
-                onChange={handleProfilePictureUpload}
-                disabled={uploadingProfile}
-              />
-              <svg width="16" height="16" fill="white" viewBox="0 0 24 24">
-                <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
-              </svg>
-            </div>
-          </div>
-          <h1>{user.name}</h1>
-          <p>{user.email}</p>
-        </div>
-
-        {/* Bio Section */}
-        <div style={{ marginBottom: '24px' }}>
-          <div style={{
-            background: 'rgba(102, 126, 234, 0.05)',
-            border: '1px solid rgba(102, 126, 234, 0.1)',
-            borderRadius: '12px',
-            padding: '16px',
-            textAlign: 'center'
-          }}>
-            <h3 style={{
-              fontSize: '16px',
-              fontWeight: '600',
-              color: '#374151',
-              margin: '0 0 8px 0'
-            }}>About Me</h3>
-            <p style={{
-              fontSize: '14px',
-              color: '#6B7280',
-              lineHeight: '1.5',
-              fontStyle: 'italic',
-              margin: '0 0 12px 0',
-              minHeight: '20px'
-            }}>
-              {user.bio || "No bio yet..."}
-            </p>
-            <button 
-              onClick={() => {
-                setBio(user.bio || "");
-                setShowEditModal(true);
-              }}
-              style={{
-                background: 'none',
-                border: 'none',
-                color: '#667eea',
-                fontSize: '12px',
-                fontWeight: '600',
-                cursor: 'pointer',
-                textDecoration: 'underline'
-              }}
-            >
-              Edit Bio
-            </button>
-          </div>
-        </div>
-
-        {/* Stats Section */}
-        <div style={{
-          display: 'flex',
-          justifyContent: 'space-around',
-          marginBottom: '24px',
-          padding: '20px',
-          background: 'rgba(255, 255, 255, 0.8)',
-          borderRadius: '12px',
-          border: '1px solid rgba(0, 0, 0, 0.05)'
-        }}>
-          <div style={{ textAlign: 'center' }}>
-            <div style={{
-              fontSize: '24px',
-              fontWeight: '700',
-              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-              backgroundClip: 'text',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
-              marginBottom: '4px'
-            }}>
-              {user.posts || 0}
-            </div>
-            <div style={{
-              fontSize: '12px',
-              color: '#6B7280',
-              textTransform: 'uppercase',
-              letterSpacing: '0.5px',
-              fontWeight: '600'
-            }}>
-              Posts
-            </div>
-          </div>
-          
-          <div style={{ textAlign: 'center' }}>
-            <div style={{
-              fontSize: '24px',
-              fontWeight: '700',
-              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-              backgroundClip: 'text',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
-              marginBottom: '4px'
-            }}>
-              {user.followers || 0}
-            </div>
-            <div style={{
-              fontSize: '12px',
-              color: '#6B7280',
-              textTransform: 'uppercase',
-              letterSpacing: '0.5px',
-              fontWeight: '600'
-            }}>
-              Followers
-            </div>
-          </div>
-          
-          <div style={{ textAlign: 'center' }}>
-            <div style={{
-              fontSize: '24px',
-              fontWeight: '700',
-              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-              backgroundClip: 'text',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
-              marginBottom: '4px'
-            }}>
-              {user.following || 0}
-            </div>
-            <div style={{
-              fontSize: '12px',
-              color: '#6B7280',
-              textTransform: 'uppercase',
-              letterSpacing: '0.5px',
-              fontWeight: '600'
-            }}>
-              Following
-            </div>
-          </div>
-        </div>
-
-        {/* Action Buttons */}
-        <div className="login-form">
-          <button 
-            className="login-btn"
-            style={{ marginBottom: '12px' }}
-            onClick={() => window.location.href = '/posts'}
-          >
-            <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24" style={{ marginRight: '8px' }}>
-              <path d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"/>
-            </svg>
-            View My Posts
-          </button>
-          
-          <button 
-            className="login-btn"
-            style={{ 
-              background: 'rgba(102, 126, 234, 0.1)',
-              color: '#667eea',
-              marginBottom: '12px'
-            }}
-            onClick={() => window.location.href = '/profile/edit'}
-          >
-            <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24" style={{ marginRight: '8px' }}>
-              <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
-            </svg>
-            Edit Profile
-          </button>
-          
-          <button 
-            onClick={handleLogout}
-            style={{
-              width: '100%',
-              padding: '16px',
-              background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
-              color: 'white',
-              border: 'none',
-              borderRadius: '12px',
-              fontSize: '16px',
-              fontWeight: '600',
-              cursor: 'pointer',
-              transition: 'all 0.3s ease',
-              boxShadow: '0 4px 12px rgba(239, 68, 68, 0.3)'
-            }}
-            onMouseOver={(e) => {
-              e.target.style.transform = 'translateY(-2px)';
-              e.target.style.boxShadow = '0 6px 16px rgba(239, 68, 68, 0.4)';
-            }}
-            onMouseOut={(e) => {
-              e.target.style.transform = 'translateY(0)';
-              e.target.style.boxShadow = '0 4px 12px rgba(239, 68, 68, 0.3)';
-            }}
-          >
-            <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24" style={{ marginRight: '8px' }}>
-              <path d="M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.59L17 17l5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z"/>
-            </svg>
-            Logout
-          </button>
-        </div>
-
-        {/* Quick Stats Footer */}
-        <div className="extra-links">
-          <p>Account created • Member since 2024</p>
-          <div style={{ display: 'flex', justifyContent: 'center', gap: '16px' }}>
-            <button style={{ color: '#6B7280', fontSize: '12px' }}>Settings</button>
-            <button style={{ color: '#6B7280', fontSize: '12px' }}>Help</button>
-            <button style={{ color: '#6B7280', fontSize: '12px' }}>Privacy</button>
           </div>
         </div>
       </div>
 
-      {/* Edit Bio Modal */}
-      {showEditModal && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          width: '100%',
-          height: '100%',
-          background: 'rgba(0, 0, 0, 0.5)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 1000
-        }}>
-          <div className="login-container slide-in" style={{ maxWidth: '400px', margin: '20px' }}>
-            <div className="login-logo">
-              <h1 style={{ fontSize: '20px' }}>Edit Bio</h1>
-              <p>Tell others about yourself</p>
-            </div>
-            
-            <div className="login-form">
-              <div className="input-group">
-                <textarea
-                  value={bio}
-                  onChange={(e) => setBio(e.target.value)}
-                  placeholder="Write something about yourself..."
-                  disabled={updating}
-                  style={{
-                    width: '100%',
-                    minHeight: '100px',
-                    padding: '16px',
-                    border: '2px solid #E5E7EB',
-                    borderRadius: '12px',
-                    fontSize: '16px',
-                    background: 'rgba(255, 255, 255, 0.8)',
-                    transition: 'all 0.3s ease',
-                    outline: 'none',
-                    resize: 'vertical',
-                    fontFamily: 'inherit'
-                  }}
-                  onFocus={(e) => {
-                    e.target.style.borderColor = '#667eea';
-                    e.target.style.boxShadow = '0 0 0 3px rgba(102, 126, 234, 0.1)';
-                    e.target.style.background = 'rgba(255, 255, 255, 1)';
-                  }}
-                  onBlur={(e) => {
-                    e.target.style.borderColor = '#E5E7EB';
-                    e.target.style.boxShadow = 'none';
-                    e.target.style.background = 'rgba(255, 255, 255, 0.8)';
-                  }}
-                />
+      {/* Bootstrap Modal for Profile Details */}
+      {showProfileModal && (
+        <div className="modal fade show d-block" tabIndex="-1" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <div className="modal-dialog modal-dialog-centered modal-lg">
+            <div className="modal-content" style={{ borderRadius: '20px', border: 'none' }}>
+              <div className="modal-header border-0 pb-0">
+                <h5 className="modal-title fw-bold">Profile Details</h5>
+                <button 
+                  type="button" 
+                  className="btn-close" 
+                  onClick={() => setShowProfileModal(false)}
+                ></button>
               </div>
               
-              <div style={{ display: 'flex', gap: '12px' }}>
+              <div className="modal-body">
+                {/* Profile Picture Section */}
+                <div className="text-center mb-4">
+                  <div className="position-relative d-inline-block">
+                    <img
+                      src={user.profilePicture ? `http://localhost:5000${user.profilePicture}` : "https://via.placeholder.com/120x120/667eea/white?text=" + user.name.charAt(0)}
+                      alt="Profile"
+                      className="rounded-circle"
+                      style={{ width: '120px', height: '120px', objectFit: 'cover', border: '4px solid #667eea' }}
+                    />
+                    <label 
+                      className="position-absolute bottom-0 end-0 btn btn-primary btn-sm rounded-circle"
+                      style={{ width: '36px', height: '36px', padding: '0' }}
+                    >
+                      <i className="bi bi-camera"></i>
+                      <input 
+                        type="file" 
+                        accept="image/*" 
+                        onChange={handleProfilePictureUpload}
+                        disabled={uploadingProfile}
+                        className="d-none"
+                      />
+                    </label>
+                    {uploadingProfile && (
+                      <div className="position-absolute top-50 start-50 translate-middle">
+                        <div className="spinner-border text-primary" role="status">
+                          <span className="visually-hidden">Uploading...</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* User Details */}
+                <div className="row">
+                  <div className="col-md-6 mb-3">
+                    <label className="form-label fw-semibold text-muted small">Full Name</label>
+                    <div className="form-control-plaintext border rounded p-2 bg-light">{user.name}</div>
+                  </div>
+                  <div className="col-md-6 mb-3">
+                    <label className="form-label fw-semibold text-muted small">Email</label>
+                    <div className="form-control-plaintext border rounded p-2 bg-light">{user.email}</div>
+                  </div>
+                  <div className="col-md-6 mb-3">
+                    <label className="form-label fw-semibold text-muted small">Your Posts</label>
+                    <div className="form-control-plaintext border rounded p-2 bg-light">{userPostCount}</div>
+                  </div>
+                  <div className="col-md-6 mb-3">
+                    <label className="form-label fw-semibold text-muted small">Member Since</label>
+                    <div className="form-control-plaintext border rounded p-2 bg-light">2024</div>
+                  </div>
+                </div>
+
+                {/* Bio Section */}
+                <div className="mb-4">
+                  <label className="form-label fw-semibold text-muted small">Bio</label>
+                  <textarea
+                    value={bio}
+                    onChange={(e) => setBio(e.target.value)}
+                    className="form-control"
+                    rows="4"
+                    style={{ borderRadius: '12px', resize: 'none' }}
+                    placeholder="Tell others about yourself..."
+                  />
+                  <div className="mt-2">
+                    <button 
+                      onClick={handleUpdateBio}
+                      disabled={updating}
+                      className="btn btn-success btn-sm"
+                    >
+                      {updating ? (
+                        <>
+                          <span className="spinner-border spinner-border-sm me-1" role="status"></span>
+                          Saving...
+                        </>
+   
+                      ) : (
+                        <>
+                          <i className="bi bi-check-lg me-1"></i>
+                          Save Bio
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Activity Stats */}
+                <div className="row text-center">
+                  <div className="col-4">
+                    <div className="card border-0 bg-primary text-white h-100">
+                      <div className="card-body py-3">
+                        <h4 className="fw-bold mb-0">{posts.length}</h4>
+                        <small>Posts</small>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="col-4">
+                    <div className="card border-0 bg-success text-white h-100">
+                      <div className="card-body py-3">
+                        <h4 className="fw-bold mb-0">{user.followers}</h4>
+                        <small>Followers</small>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="col-4">
+                    <div className="card border-0 bg-info text-white h-100">
+                      <div className="card-body py-3">
+                        <h4 className="fw-bold mb-0">{user.following}</h4>
+                        <small>Following</small>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="modal-footer border-0 pt-0">
                 <button 
-                  onClick={handleUpdateBio}
-                  disabled={updating}
-                  className="login-btn"
-                  style={{ 
-                    flex: 1,
-                    opacity: updating ? 0.7 : 1,
-                    cursor: updating ? 'not-allowed' : 'pointer'
-                  }}
+                  type="button" 
+                  className="btn btn-secondary rounded-pill px-4"
+                  onClick={() => setShowProfileModal(false)}
                 >
-                  {updating ? (
-                    <>
-                      <span className="spinner" style={{ width: '16px', height: '16px', marginRight: '8px' }}></span>
-                      Saving...
-                    </>
-                  ) : (
-                    'Save Bio'
-                  )}
+                  Close
                 </button>
                 <button 
-                  onClick={() => setShowEditModal(false)}
-                  disabled={updating}
-                  style={{
-                    flex: 1,
-                    padding: '16px',
-                    background: 'rgba(107, 114, 128, 0.1)',
-                    color: '#6B7280',
-                    border: '2px solid #E5E7EB',
-                    borderRadius: '12px',
-                    fontSize: '16px',
-                    fontWeight: '600',
-                    cursor: updating ? 'not-allowed' : 'pointer',
-                    transition: 'all 0.3s ease',
-                    opacity: updating ? 0.7 : 1
-                  }}
-                  onMouseOver={(e) => {
-                    if (!updating) {
-                      e.target.style.background = 'rgba(107, 114, 128, 0.2)';
-                      e.target.style.borderColor = '#9CA3AF';
-                    }
-                  }}
-                  onMouseOut={(e) => {
-                    if (!updating) {
-                      e.target.style.background = 'rgba(107, 114, 128, 0.1)';
-                      e.target.style.borderColor = '#E5E7EB';
-                    }
-                  }}
+                  onClick={onLogout}
+                  className="btn btn-danger rounded-pill px-4"
                 >
-                  Cancel
+                  <i className="bi bi-box-arrow-right me-1"></i>
+                  Logout
                 </button>
               </div>
             </div>
           </div>
         </div>
       )}
-    </div>
+
+      {/* Bootstrap JS */}
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/js/bootstrap.bundle.min.js"></script>
+    </>
   );
 };
 

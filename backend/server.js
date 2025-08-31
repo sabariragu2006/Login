@@ -594,6 +594,90 @@ app.delete('/posts/:postId', async (req, res) => {
   }
 });
 
+// --- Update Bio ---
+app.put('/update-bio/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { bio } = req.body;
+    
+    const user = await User.findByIdAndUpdate(
+      userId, 
+      { bio: bio || '' }, 
+      { new: true }
+    );
+    
+    if (!user) return res.status(404).json({ message: 'User not found.' });
+    
+    res.json({ bio: user.bio });
+  } catch (err) {
+    console.error('UPDATE BIO ERROR:', err);
+    res.status(500).json({ message: 'Server error.' });
+  }
+});
+
+// --- Update Profile Picture ---
+app.put('/update-profile-picture/:userId', upload.single('profilePicture'), async (req, res) => {
+  try {
+    const { userId } = req.params;
+    
+    if (!req.file) {
+      return res.status(400).json({ message: 'Profile picture is required.' });
+    }
+    
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ message: 'User not found.' });
+    
+    // Delete old profile picture if exists
+    if (user.profilePicture) {
+      const oldImagePath = path.join(__dirname, user.profilePicture);
+      if (fs.existsSync(oldImagePath)) {
+        fs.unlinkSync(oldImagePath);
+      }
+    }
+    
+    // Update user with new profile picture
+    user.profilePicture = `/uploads/${req.file.filename}`;
+    await user.save();
+    
+    // Update all posts and comments with new profile picture
+    await Post.updateMany(
+      { 'author._id': userId },
+      { 'author.profilePicture': user.profilePicture }
+    );
+    
+    await Post.updateMany(
+      { 'comments.author._id': userId },
+      { $set: { 'comments.$.author.profilePicture': user.profilePicture } }
+    );
+    
+    res.json({ profilePicture: user.profilePicture });
+  } catch (err) {
+    console.error('UPDATE PROFILE PICTURE ERROR:', err);
+    res.status(500).json({ message: 'Server error.' });
+  }
+});
+
+// --- Update Bio ---
+app.put('/update-bio/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { bio } = req.body;
+    
+    const user = await User.findByIdAndUpdate(
+      userId, 
+      { bio: bio || '' }, 
+      { new: true }
+    );
+    
+    if (!user) return res.status(404).json({ message: 'User not found.' });
+    
+    res.json({ bio: user.bio });
+  } catch (err) {
+    console.error('UPDATE BIO ERROR:', err);
+    res.status(500).json({ message: 'Server error.' });
+  }
+});
+
 // --- 404 fallback ---
 app.use((req, res) => res.status(404).json({ message: 'Route not found.' }));
 

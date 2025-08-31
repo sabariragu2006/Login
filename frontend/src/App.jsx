@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-d
 import Register from "./components/Register";
 import LoginForm from "./components/LoginForm";
 import Dashboard from "./components/Dashboard";
+import Uploads from "./components/Uploads"; // <-- import your Uploads component
 
 function App() {
   const [user, setUser] = useState(null);
@@ -48,7 +49,7 @@ function App() {
           {/* Default → Dashboard if logged in, otherwise Login */}
           <Route 
             path="/" 
-            element={user ? <Navigate to="/dashboard" /> : <Navigate to="/login" />} 
+            element={<Navigate to="/login" />} 
           />
           
           {/* Login Page */}
@@ -77,6 +78,16 @@ function App() {
             element={
               user ? 
                 <Dashboard user={user} onLogout={handleLogout} /> : 
+                <Navigate to="/login" />
+            }
+          />
+
+          {/* Uploads Page (protected) */}
+          <Route
+            path="/uploads"
+            element={
+              user ? 
+                <Uploads user={user} onLogout={handleLogout} /> : 
                 <Navigate to="/login" />
             }
           />
