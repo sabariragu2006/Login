@@ -99,34 +99,25 @@ const Register = ({ onRegister }) => {
         </div>
 
         <form onSubmit={handleSubmit} className="login-form">
-          {/* Profile Picture */}
-          <div className="mb-4 text-center">
-            <div className="relative inline-block">
-              <div className="w-20 h-20 rounded-full border-2 border-gray-300 overflow-hidden bg-gray-100 mx-auto">
-                {previewUrl ? (
-                  <img
-                    src={previewUrl}
-                    alt="Preview"
-                    className="w-full h-full object-cover"
-                  />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center text-gray-400">
-                    <User size={32} />
-                  </div>
-                )}
-              </div>
-              <label className="absolute bottom-0 right-0 bg-blue-500 text-white rounded-full p-1 cursor-pointer hover:bg-blue-600 transition">
-                <Camera size={16} />
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleFileChange}
-                  className="hidden"
-                />
-              </label>
-            </div>
-            <p className="text-xs text-gray-600 mt-2">Optional profile picture</p>
-          </div>
+         {/* Profile Picture (no preview) */}
+<div className="mb-4 text-center">
+  <div className="relative inline-block">
+    <div className="w-20 h-20 rounded-full border-2 border-gray-300 overflow-hidden bg-gray-100 mx-auto flex items-center justify-center">
+      <User size={32} className="text-gray-400" /> {/* Always shows icon */}
+    </div>
+    <label className="absolute bottom-0 right-0 bg-blue-500 text-white rounded-full p-1 cursor-pointer hover:bg-blue-600 transition">
+      <Camera size={16} />
+      <input
+        type="file"
+        accept="image/*"
+        onChange={(e) => setProfilePicture(e.target.files[0])}
+        className="hidden"
+      />
+    </label>
+  </div>
+  <p className="text-xs text-gray-600 mt-2">Optional profile picture</p>
+</div>
+
 
           {/* Name */}
           <div className="input-group">

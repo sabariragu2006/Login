@@ -26,9 +26,48 @@ mongoose
   .then(() => console.log('✅ MongoDB connected'))
   .catch((err) => console.error('❌ MongoDB connection error:', err));
 
+// --- Follow Request Schema ---
+const followRequestSchema = new mongoose.Schema({
+  from: {
+    _id: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    name: { type: String, required: true },
+    profilePicture: String
+  },
+  to: {
+    _id: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    name: { type: String, required: true },
+    profilePicture: String
+  },
+  status: { type: String, enum: ['pending', 'accepted', 'rejected'], default: 'pending' },
+  createdAt: { type: Date, default: Date.now }
+});
+
+const FollowRequest = mongoose.model('FollowRequest', followRequestSchema);
+
+// --- Notification Schema ---
+const notificationSchema = new mongoose.Schema({
+  recipient: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  type: { 
+    type: String, 
+    enum: ['follow_request', 'follow_accepted', 'new_follower', 'post_reaction', 'post_comment'], 
+    required: true 
+  },
+  message: { type: String, required: true },
+  from: {
+    _id: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    name: String,
+    profilePicture: String
+  },
+  relatedPost: { type: mongoose.Schema.Types.ObjectId, ref: 'Post' },
+  read: { type: Boolean, default: false },
+  createdAt: { type: Date, default: Date.now }
+});
+
+const Notification = mongoose.model('Notification', notificationSchema);
+
 // --- Story Schema ---
 const storySchema = new mongoose.Schema({
-  media: { type: String, required: true }, // image or video path
+  media: { type: String, required: true },
   mediaType: { type: String, enum: ['image', 'video'], required: true },
   author: {
     _id: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
@@ -39,8 +78,8 @@ const storySchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now },
   expiresAt: { 
     type: Date, 
-    default: () => new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours from now
-    index: { expireAfterSeconds: 0 } // MongoDB TTL index
+    default: () => new Date(Date.now() + 24 * 60 * 60 * 1000),
+    index: { expireAfterSeconds: 0 }
   }
 });
 
@@ -87,6 +126,8 @@ const postSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now }
 });
 
+postSchema.index({ 'author._id': 1, createdAt: -1 });
+
 const Post = mongoose.model('Post', postSchema);
 
 // --- User Schema ---
@@ -96,8 +137,8 @@ const userSchema = new mongoose.Schema({
   passwordHash: String,
   profilePicture: String,
   bio: { type: String, default: 'This is my bio...' },
-  followers: { type: Number, default: 0 },
-  following: { type: Number, default: 0 },
+  followers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+  following: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
   posts: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Post' }],
   stories: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Story' }]
 });
@@ -119,6 +160,9 @@ app.use(express.json());
 app.use(morgan('dev'));
 app.use('/uploads', express.static(UPLOADS_DIR));
 
+app.get('/test', (req, res) => {
+  res.json({ ok: true, message: 'Server is working!' });
+});
 // --- Multer (file uploads) ---
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, UPLOADS_DIR),
@@ -147,7 +191,7 @@ const upload = multer({
   storage,
   fileFilter,
   limits: {
-    fileSize: 50 * 1024 * 1024, // 50MB limit for videos
+    fileSize: 50 * 1024 * 1024, // 50MB
   }
 });
 
@@ -158,8 +202,8 @@ const publicUser = (u) => ({
   email: u.email,
   profilePicture: u.profilePicture || null,
   bio: u.bio || '',
-  followers: u.followers || 0,
-  following: u.following || 0,
+  followers: Array.isArray(u.followers) ? u.followers.length : 0,
+  following: Array.isArray(u.following) ? u.following.length : 0,
   posts: u.posts?.length || 0
 });
 
@@ -197,6 +241,25 @@ const formatStory = (story, currentUserId = null) => ({
   expiresAt: story.expiresAt
 });
 
+const createNotification = async (recipientId, type, message, fromUser = null, relatedPost = null) => {
+  try {
+    const notification = new Notification({
+      recipient: recipientId,
+      type,
+      message,
+      from: fromUser ? {
+        _id: fromUser._id,
+        name: fromUser.name,
+        profilePicture: fromUser.profilePicture
+      } : null,
+      relatedPost
+    });
+    await notification.save();
+  } catch (err) {
+    console.error('Error creating notification:', err);
+  }
+};
+
 // --- Health ---
 app.get('/', (_req, res) => res.json({ ok: true, service: 'myapp-api' }));
 
@@ -221,6 +284,8 @@ app.post('/register', upload.single('profilePicture'), async (req, res) => {
       name,
       email,
       profilePicture: req.file ? `/uploads/${req.file.filename}` : null,
+      followers: [],
+      following: []
     });
     await user.setPassword(password);
     await user.save();
@@ -255,6 +320,210 @@ app.post('/login', async (req, res) => {
     });
   } catch (err) {
     console.error('LOGIN ERROR:', err);
+    return res.status(500).json({ message: 'Server error.' });
+  }
+});
+
+// --- Get All Users (except current user) ---
+app.get('/users', async (req, res) => {
+  try {
+    const { excludeId } = req.query;
+    
+    const users = await User.find(excludeId ? { _id: { $ne: excludeId } } : {})
+      .select('-passwordHash')
+      .limit(20);
+
+    if (excludeId) {
+      const currentUser = await User.findById(excludeId);
+      
+      const usersWithFollowStatus = await Promise.all(
+        users.map(async (user) => {
+          const pendingRequest = await FollowRequest.findOne({
+            'from._id': excludeId,
+            'to._id': user._id,
+            status: 'pending'
+          });
+
+const isFollowing = Array.isArray(currentUser.following) 
+  ? currentUser.following.includes(user._id) 
+  : false;
+          return {
+            ...publicUser(user),
+            postsCount: user.posts?.length || 0,
+            followStatus: isFollowing ? 'following' : (pendingRequest ? 'pending' : 'none')
+          };
+        })
+      );
+
+      return res.json({ users: usersWithFollowStatus });
+    }
+
+    return res.json({ users: users.map(publicUser) });
+  } catch (err) {
+    console.error('GET USERS ERROR:', err);
+    return res.status(500).json({ message: 'Server error.' });
+  }
+});
+
+// --- Send Follow Request ---
+app.post('/send-follow-request', async (req, res) => {
+  try {
+    const { fromUserId, toUserId } = req.body;
+    
+    if (!fromUserId || !toUserId) {
+      return res.status(400).json({ message: 'fromUserId and toUserId are required.' });
+    }
+
+    if (fromUserId === toUserId) {
+      return res.status(400).json({ message: 'Cannot follow yourself.' });
+    }
+
+    const fromUser = await User.findById(fromUserId);
+    const toUser = await User.findById(toUserId);
+
+    if (!fromUser || !toUser) {
+      return res.status(404).json({ message: 'User not found.' });
+    }
+
+    if (fromUser.following.includes(toUserId)) {
+      return res.status(400).json({ message: 'Already following this user.' });
+    }
+
+    const existingRequest = await FollowRequest.findOne({
+      'from._id': fromUserId,
+      'to._id': toUserId,
+      status: 'pending'
+    });
+
+    if (existingRequest) {
+      return res.status(400).json({ message: 'Follow request already sent.' });
+    }
+
+    const followRequest = new FollowRequest({
+      from: {
+        _id: fromUser._id,
+        name: fromUser.name,
+        profilePicture: fromUser.profilePicture
+      },
+      to: {
+        _id: toUser._id,
+        name: toUser.name,
+        profilePicture: toUser.profilePicture
+      }
+    });
+
+    await followRequest.save();
+
+    await createNotification(
+      toUserId,
+      'follow_request',
+      `${fromUser.name} wants to follow you`,
+      fromUser
+    );
+
+    return res.json({ message: 'Follow request sent successfully' });
+  } catch (err) {
+    console.error('SEND FOLLOW REQUEST ERROR:', err);
+    return res.status(500).json({ message: 'Server error.' });
+  }
+});
+
+// --- Handle Follow Request (Accept/Reject) ---
+app.post('/handle-follow-request', async (req, res) => {
+  try {
+    const { requestId, action } = req.body;
+    
+    if (!requestId || !['accept', 'reject'].includes(action)) {
+      return res.status(400).json({ message: 'Invalid request or action.' });
+    }
+
+    const followRequest = await FollowRequest.findById(requestId);
+    if (!followRequest) {
+      return res.status(404).json({ message: 'Follow request not found.' });
+    }
+
+    if (followRequest.status !== 'pending') {
+      return res.status(400).json({ message: 'Follow request already handled.' });
+    }
+
+    followRequest.status = action === 'accept' ? 'accepted' : 'rejected';
+    await followRequest.save();
+
+    if (action === 'accept') {
+      await User.findByIdAndUpdate(followRequest.from._id, {
+        $addToSet: { following: followRequest.to._id }
+      });
+      
+      await User.findByIdAndUpdate(followRequest.to._id, {
+        $addToSet: { followers: followRequest.from._id }
+      });
+
+      await createNotification(
+        followRequest.from._id,
+        'follow_accepted',
+        `${followRequest.to.name} accepted your follow request`,
+        { 
+          _id: followRequest.to._id,
+          name: followRequest.to.name,
+          profilePicture: followRequest.to.profilePicture
+        }
+      );
+    }
+
+    return res.json({ message: `Follow request ${action}ed successfully` });
+  } catch (err) {
+    console.error('HANDLE FOLLOW REQUEST ERROR:', err);
+    return res.status(500).json({ message: 'Server error.' });
+  }
+});
+
+// --- Get Follow Requests ---
+app.get('/follow-requests/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const requests = await FollowRequest.find({ 'to._id': userId, status: 'pending' }).sort({ createdAt: -1 });
+    return res.json({ requests });
+  } catch (err) {
+    console.error('GET FOLLOW REQUESTS ERROR:', err);
+    return res.status(500).json({ message: 'Server error.' });
+  }
+});
+
+// --- Get Notifications ---
+app.get('/notifications/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const notifications = await Notification.find({ recipient: userId })
+      .sort({ createdAt: -1 })
+      .limit(20);
+    return res.json({ notifications });
+  } catch (err) {
+    console.error('GET NOTIFICATIONS ERROR:', err);
+    return res.status(500).json({ message: 'Server error.' });
+  }
+});
+
+// --- Get Posts from Following Users ---
+app.get('/posts/following/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ message: 'User not found.' });
+
+const followingIds = [
+  ...(Array.isArray(user.following) ? user.following : []),
+  user._id
+];    
+    const posts = await Post.find({ 'author._id': { $in: followingIds } })
+      .sort({ createdAt: -1 })
+      .limit(50);
+
+    const formattedPosts = posts.map(post => formatPost(post, userId));
+
+    return res.json({ posts: formattedPosts });
+  } catch (err) {
+    console.error('GET FOLLOWING POSTS ERROR:', err);
     return res.status(500).json({ message: 'Server error.' });
   }
 });
@@ -338,13 +607,10 @@ app.post('/add-story', upload.single('storyMedia'), async (req, res) => {
 app.get('/posts', async (req, res) => {
   try {
     const { userId } = req.query;
-    
     const posts = await Post.find({})
       .sort({ createdAt: -1 })
       .limit(50);
-
     const formattedPosts = posts.map(post => formatPost(post, userId));
-
     return res.json({ posts: formattedPosts });
   } catch (err) {
     console.error('GET POSTS ERROR:', err);
@@ -357,12 +623,8 @@ app.get('/posts/user/:userId', async (req, res) => {
   try {
     const { userId } = req.params;
     const { currentUserId } = req.query;
-    
-    const posts = await Post.find({ 'author._id': userId })
-      .sort({ createdAt: -1 });
-
+    const posts = await Post.find({ 'author._id': userId }).sort({ createdAt: -1 });
     const formattedPosts = posts.map(post => formatPost(post, currentUserId));
-
     return res.json({ posts: formattedPosts });
   } catch (err) {
     console.error('GET USER POSTS ERROR:', err);
@@ -374,28 +636,18 @@ app.get('/posts/user/:userId', async (req, res) => {
 app.get('/stories', async (req, res) => {
   try {
     const { userId } = req.query;
-    
-    // Get stories that haven't expired and group by user
-    const stories = await Story.find({
-      expiresAt: { $gt: new Date() }
-    }).sort({ createdAt: -1 });
+    const stories = await Story.find({ expiresAt: { $gt: new Date() } }).sort({ createdAt: -1 });
 
-    // Group stories by user
     const groupedStories = {};
     stories.forEach(story => {
       const authorId = story.author._id.toString();
       if (!groupedStories[authorId]) {
-        groupedStories[authorId] = {
-          author: story.author,
-          stories: []
-        };
+        groupedStories[authorId] = { author: story.author, stories: [] };
       }
       groupedStories[authorId].stories.push(formatStory(story, userId));
     });
 
-    return res.json({ 
-      stories: Object.values(groupedStories)
-    });
+    return res.json({ stories: Object.values(groupedStories) });
   } catch (err) {
     console.error('GET STORIES ERROR:', err);
     return res.status(500).json({ message: 'Server error.' });
@@ -406,10 +658,7 @@ app.get('/stories', async (req, res) => {
 app.post('/view-story', async (req, res) => {
   try {
     const { userId, storyId } = req.body;
-    
-    if (!userId || !storyId) {
-      return res.status(400).json({ message: 'userId and storyId are required.' });
-    }
+    if (!userId || !storyId) return res.status(400).json({ message: 'userId and storyId are required.' });
 
     const story = await Story.findById(storyId);
     if (!story) return res.status(404).json({ message: 'Story not found.' });
@@ -430,42 +679,24 @@ app.post('/view-story', async (req, res) => {
 app.post('/add-reaction', async (req, res) => {
   try {
     const { userId, postId, reactionType } = req.body;
-    
-    if (!userId || !postId || !reactionType) {
-      return res.status(400).json({ message: 'userId, postId, and reactionType are required.' });
-    }
+    if (!userId || !postId || !reactionType) return res.status(400).json({ message: 'Required fields missing.' });
 
     const validReactions = ['like', 'love', 'laugh', 'wow', 'sad', 'angry'];
-    if (!validReactions.includes(reactionType)) {
-      return res.status(400).json({ message: 'Invalid reaction type.' });
-    }
+    if (!validReactions.includes(reactionType)) return res.status(400).json({ message: 'Invalid reaction type.' });
 
     const user = await User.findById(userId);
     const post = await Post.findById(postId);
+    if (!user || !post) return res.status(404).json({ message: 'User or post not found.' });
 
-    if (!user || !post) {
-      return res.status(404).json({ message: 'User or post not found.' });
-    }
-
-    // Remove existing reaction from this user
     post.reactions = post.reactions.filter(r => r.user._id.toString() !== userId);
-
-    // Add new reaction
     post.reactions.push({
       type: reactionType,
-      user: {
-        _id: user._id,
-        name: user.name,
-        profilePicture: user.profilePicture
-      }
+      user: { _id: user._id, name: user.name, profilePicture: user.profilePicture }
     });
 
     await post.save();
 
-    return res.json({
-      message: 'Reaction added',
-      post: formatPost(post, userId)
-    });
+    return res.json({ message: 'Reaction added', post: formatPost(post, userId) });
   } catch (err) {
     console.error('ADD REACTION ERROR:', err);
     return res.status(500).json({ message: 'Server error.' });
@@ -476,10 +707,7 @@ app.post('/add-reaction', async (req, res) => {
 app.delete('/remove-reaction', async (req, res) => {
   try {
     const { userId, postId } = req.body;
-    
-    if (!userId || !postId) {
-      return res.status(400).json({ message: 'userId and postId are required.' });
-    }
+    if (!userId || !postId) return res.status(400).json({ message: 'userId and postId are required.' });
 
     const post = await Post.findById(postId);
     if (!post) return res.status(404).json({ message: 'Post not found.' });
@@ -487,10 +715,7 @@ app.delete('/remove-reaction', async (req, res) => {
     post.reactions = post.reactions.filter(r => r.user._id.toString() !== userId);
     await post.save();
 
-    return res.json({
-      message: 'Reaction removed',
-      post: formatPost(post, userId)
-    });
+    return res.json({ message: 'Reaction removed', post: formatPost(post, userId) });
   } catch (err) {
     console.error('REMOVE REACTION ERROR:', err);
     return res.status(500).json({ message: 'Server error.' });
@@ -500,39 +725,32 @@ app.delete('/remove-reaction', async (req, res) => {
 // --- Add Comment ---
 app.post('/add-comment', async (req, res) => {
   try {
-    const { userId, postId, text } = req.body || {};
-    
-    if (!userId || !postId || !text) {
-      return res.status(400).json({ message: 'userId, postId, and text are required.' });
-    }
-
-    if (!text.trim()) {
-      return res.status(400).json({ message: 'Comment text cannot be empty.' });
-    }
+    const { userId, postId, text } = req.body;
+    if (!userId || !postId || !text) return res.status(400).json({ message: 'All fields are required.' });
 
     const user = await User.findById(userId);
-    if (!user) return res.status(404).json({ message: 'User not found.' });
-
     const post = await Post.findById(postId);
-    if (!post) return res.status(404).json({ message: 'Post not found.' });
+    if (!user || !post) return res.status(404).json({ message: 'User or post not found.' });
 
     const newComment = {
       text: text.trim(),
-      author: {
-        _id: user._id,
-        name: user.name,
-        profilePicture: user.profilePicture
-      }
+      author: { _id: user._id, name: user.name, profilePicture: user.profilePicture }
     };
 
     post.comments.push(newComment);
     await post.save();
 
-    const addedComment = post.comments[post.comments.length - 1];
+    await createNotification(
+      post.author._id,
+      'post_comment',
+      `${user.name} commented on your post`,
+      user,
+      post._id
+    );
 
     return res.json({
       message: 'Comment added',
-      comment: addedComment,
+      comment: newComment,
       commentCount: post.comments.length
     });
   } catch (err) {
@@ -544,12 +762,9 @@ app.post('/add-comment', async (req, res) => {
 // --- Get User Info ---
 app.get('/users/:id', async (req, res) => {
   try {
-    const { id } = req.params || {};
-    if (!id) return res.status(400).json({ message: 'User id is required.' });
-
+    const { id } = req.params;
     const user = await User.findById(id).populate('posts');
     if (!user) return res.status(404).json({ message: 'User not found.' });
-
     return res.json({ user: publicUser(user) });
   } catch (err) {
     console.error('GET USER ERROR:', err);
@@ -563,28 +778,21 @@ app.delete('/posts/:postId', async (req, res) => {
     const { postId } = req.params;
     const { userId } = req.body;
 
-    if (!userId) {
-      return res.status(400).json({ message: 'userId is required.' });
-    }
+    if (!userId) return res.status(400).json({ message: 'userId is required.' });
 
     const post = await Post.findById(postId);
     if (!post) return res.status(404).json({ message: 'Post not found.' });
 
     if (post.author._id.toString() !== userId) {
-      return res.status(403).json({ message: 'Not authorized to delete this post.' });
+      return res.status(403).json({ message: 'Not authorized.' });
     }
 
     if (post.image) {
       const imagePath = path.join(__dirname, post.image);
-      if (fs.existsSync(imagePath)) {
-        fs.unlinkSync(imagePath);
-      }
+      if (fs.existsSync(imagePath)) fs.unlinkSync(imagePath);
     }
 
-    await User.findByIdAndUpdate(userId, {
-      $pull: { posts: postId }
-    });
-
+    await User.findByIdAndUpdate(userId, { $pull: { posts: postId } });
     await Post.findByIdAndDelete(postId);
 
     return res.json({ message: 'Post deleted successfully' });
@@ -600,12 +808,7 @@ app.put('/update-bio/:userId', async (req, res) => {
     const { userId } = req.params;
     const { bio } = req.body;
     
-    const user = await User.findByIdAndUpdate(
-      userId, 
-      { bio: bio || '' }, 
-      { new: true }
-    );
-    
+    const user = await User.findByIdAndUpdate(userId, { bio: bio || '' }, { new: true });
     if (!user) return res.status(404).json({ message: 'User not found.' });
     
     res.json({ bio: user.bio });
@@ -619,61 +822,32 @@ app.put('/update-bio/:userId', async (req, res) => {
 app.put('/update-profile-picture/:userId', upload.single('profilePicture'), async (req, res) => {
   try {
     const { userId } = req.params;
-    
-    if (!req.file) {
-      return res.status(400).json({ message: 'Profile picture is required.' });
-    }
-    
+    if (!req.file) return res.status(400).json({ message: 'Profile picture is required.' });
+
     const user = await User.findById(userId);
     if (!user) return res.status(404).json({ message: 'User not found.' });
-    
-    // Delete old profile picture if exists
+
     if (user.profilePicture) {
       const oldImagePath = path.join(__dirname, user.profilePicture);
-      if (fs.existsSync(oldImagePath)) {
-        fs.unlinkSync(oldImagePath);
-      }
+      if (fs.existsSync(oldImagePath)) fs.unlinkSync(oldImagePath);
     }
-    
-    // Update user with new profile picture
+
     user.profilePicture = `/uploads/${req.file.filename}`;
     await user.save();
-    
-    // Update all posts and comments with new profile picture
+
     await Post.updateMany(
       { 'author._id': userId },
       { 'author.profilePicture': user.profilePicture }
     );
-    
+
     await Post.updateMany(
       { 'comments.author._id': userId },
       { $set: { 'comments.$.author.profilePicture': user.profilePicture } }
     );
-    
+
     res.json({ profilePicture: user.profilePicture });
   } catch (err) {
     console.error('UPDATE PROFILE PICTURE ERROR:', err);
-    res.status(500).json({ message: 'Server error.' });
-  }
-});
-
-// --- Update Bio ---
-app.put('/update-bio/:userId', async (req, res) => {
-  try {
-    const { userId } = req.params;
-    const { bio } = req.body;
-    
-    const user = await User.findByIdAndUpdate(
-      userId, 
-      { bio: bio || '' }, 
-      { new: true }
-    );
-    
-    if (!user) return res.status(404).json({ message: 'User not found.' });
-    
-    res.json({ bio: user.bio });
-  } catch (err) {
-    console.error('UPDATE BIO ERROR:', err);
     res.status(500).json({ message: 'Server error.' });
   }
 });
@@ -699,7 +873,7 @@ app.use((err, _req, res, _next) => {
   res.status(500).json({ message: 'Server error.' });
 });
 
-// --- Clean up expired stories (optional cron job) ---
+// --- Clean up expired stories ---
 setInterval(async () => {
   try {
     await Story.deleteMany({ expiresAt: { $lt: new Date() } });
@@ -707,7 +881,7 @@ setInterval(async () => {
   } catch (err) {
     console.error('Story cleanup error:', err);
   }
-}, 60 * 60 * 1000); // Run every hour
+}, 60 * 60 * 1000); // hourly
 
 // --- Start ---
 app.listen(PORT, () => {
