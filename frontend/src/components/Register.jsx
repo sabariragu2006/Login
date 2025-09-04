@@ -70,7 +70,7 @@ const Register = ({ onRegister }) => {
       } else {
         // Auto-login after successful registration
         onRegister(result.user);
-        navigate('/dashboard');
+        navigate('/login');
       }
     } catch (err) {
       setError('Server error: ' + err.message);

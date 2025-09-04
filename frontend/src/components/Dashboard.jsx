@@ -434,56 +434,85 @@ const Dashboard = ({ onLogout }) => {
         padding: '20px'
       }}>
         <div className="container">
-          {/* Other Users Section - Top of page */}
+          {/* Header with Profile Button */}
+          <div className="d-flex justify-content-between align-items-center mb-4">
+            <h2 className="text-white fw-bold mb-0">Dashboard</h2>
+            <div className="d-flex align-items-center gap-3">
+              <button 
+                className="btn btn-light rounded-pill position-relative"
+                onClick={() => setShowProfileModal(true)}
+              >
+                <img
+                  src={user.profilePicture ? `http://localhost:5000${user.profilePicture}` : "https://via.placeholder.com/30x30/667eea/white?text=" + user.name.charAt(0)}
+                  alt="Profile"
+                  className="rounded-circle me-2"
+                  style={{ width: '30px', height: '30px', objectFit: 'cover' }}
+                />
+                Profile
+                {(notifications.length > 0 || followRequests.length > 0) && (
+                  <span className="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" style={{ fontSize: '0.6rem' }}>
+                    {notifications.length + followRequests.length}
+                  </span>
+                )}
+              </button>
+              <button onClick={() => navigate('/uploads')} className="btn btn-light rounded-pill">
+                <i className="bi bi-upload me-2"></i>
+                Upload Posts
+              </button>
+            </div>
+          </div>
+
+          {/* Compact Users Section */}
           <div className="row mb-4">
             <div className="col-12">
-              <div className="card shadow-lg border-0" style={{ borderRadius: '20px' }}>
-                <div className="card-header border-0 bg-white" style={{ borderRadius: '20px 20px 0 0' }}>
-                  <h5 className="mb-0 fw-bold">
+              <div className="card shadow-lg border-0" style={{ borderRadius: '15px' }}>
+                <div className="card-header border-0 bg-white py-2" style={{ borderRadius: '15px 15px 0 0' }}>
+                  <h6 className="mb-0 fw-bold">
                     <i className="bi bi-people me-2"></i>
                     Discover People
-                  </h5>
+                  </h6>
                 </div>
-                <div className="card-body">
+                <div className="card-body py-2">
                   {usersLoading ? (
-                    <div className="text-center">
-                      <div className="spinner-border" role="status">
+                    <div className="text-center py-2">
+                      <div className="spinner-border spinner-border-sm" role="status">
                         <span className="visually-hidden">Loading users...</span>
                       </div>
                     </div>
                   ) : allUsers.length === 0 ? (
-                    <p className="text-muted text-center mb-0">No other users found</p>
+                    <p className="text-muted text-center mb-0 small">No other users found</p>
                   ) : (
-                    <div className="row">
-                      {allUsers.slice(0, 6).map((otherUser) => (
-                        <div key={otherUser._id} className="col-md-4 col-sm-6 mb-3">
+                    <div className="row g-2">
+                      {allUsers.slice(0, 8).map((otherUser) => (
+                        <div key={otherUser._id} className="col-xl-3 col-lg-4 col-md-6 col-sm-6">
                           <div className="card border-0 bg-light h-100">
-                            <div className="card-body text-center p-3">
+                            <div className="card-body text-center p-2">
                               <img
-                                src={otherUser.profilePicture ? `http://localhost:5000${otherUser.profilePicture}` : "https://via.placeholder.com/60x60/667eea/white?text=" + otherUser.name.charAt(0)}
+                                src={otherUser.profilePicture ? `http://localhost:5000${otherUser.profilePicture}` : "https://via.placeholder.com/40x40/667eea/white?text=" + otherUser.name.charAt(0)}
                                 alt={otherUser.name}
-                                className="rounded-circle mb-2"
-                                style={{ width: '60px', height: '60px', objectFit: 'cover' }}
+                                className="rounded-circle mb-1"
+                                style={{ width: '40px', height: '40px', objectFit: 'cover' }}
                               />
-                              <h6 className="fw-bold mb-1">{otherUser.name}</h6>
-                              <p className="text-muted small mb-2">{otherUser.postsCount} posts</p>
+                              <h6 className="fw-bold mb-0 small">{otherUser.name.length > 12 ? otherUser.name.substring(0, 12) + '...' : otherUser.name}</h6>
+                              <p className="text-muted mb-2" style={{ fontSize: '0.7rem' }}>{otherUser.postsCount} posts</p>
                               
                               {otherUser.followStatus === 'following' ? (
-                                <button className="btn btn-success btn-sm rounded-pill" disabled>
-                                  <i className="bi bi-check-lg me-1"></i>
+                                <button className="btn btn-success btn-sm rounded-pill px-2 py-1" disabled style={{ fontSize: '0.7rem' }}>
+                                  <i className="bi bi-check-lg"></i>
                                   Following
                                 </button>
                               ) : otherUser.followStatus === 'pending' ? (
-                                <button className="btn btn-warning btn-sm rounded-pill" disabled>
-                                  <i className="bi bi-clock me-1"></i>
+                                <button className="btn btn-warning btn-sm rounded-pill px-2 py-1" disabled style={{ fontSize: '0.7rem' }}>
+                                  <i className="bi bi-clock"></i>
                                   Pending
                                 </button>
                               ) : (
                                 <button 
-                                  className="btn btn-primary btn-sm rounded-pill"
+                                  className="btn btn-primary btn-sm rounded-pill px-2 py-1"
                                   onClick={() => sendFollowRequest(otherUser._id)}
+                                  style={{ fontSize: '0.7rem' }}
                                 >
-                                  <i className="bi bi-person-plus me-1"></i>
+                                  <i className="bi bi-person-plus"></i>
                                   Follow
                                 </button>
                               )}
@@ -498,86 +527,23 @@ const Dashboard = ({ onLogout }) => {
             </div>
           </div>
 
+          {/* Posts Section - Full Width */}
           <div className="row">
-            {/* User Info Card */}
-            <div className="col-md-4 mb-4">
-              <div className="card shadow-lg border-0" style={{ borderRadius: '20px', position: 'sticky', top: '20px' }}>
-                <div className="card-body text-center p-4">
-                  <div className="position-relative d-inline-block mb-3">
-                    <img
-                      src={user.profilePicture ? `http://localhost:5000${user.profilePicture}` : "https://via.placeholder.com/100x100/667eea/white?text=" + user.name.charAt(0)}
-                      alt="Profile"
-                      className="rounded-circle"
-                      style={{ width: '100px', height: '100px', objectFit: 'cover', border: '4px solid #fff', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
-                    />
-                    {/* Notification badge */}
-                    {notifications.length > 0 && (
-                      <span className="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger">
-                        {notifications.length}
-                        <span className="visually-hidden">unread notifications</span>
-                      </span>
-                    )}
-                  </div>
-
-                  <h4 className="card-title fw-bold mb-1">{user.name}</h4>
-                  <p className="text-muted mb-3">{user.email}</p>
-
-                  <div className="row text-center mb-4">
-                    <div className="col-4">
-                      <h5 className="fw-bold text-primary mb-0">{userPostCount}</h5>
-                      <small className="text-muted">Posts</small>
-                    </div>
-                    <div className="col-4">
-                      <h5 className="fw-bold text-primary mb-0">{user.followers}</h5>
-                      <small className="text-muted">Followers</small>
-                    </div>
-                    <div className="col-4">
-                      <h5 className="fw-bold text-primary mb-0">{user.following}</h5>
-                      <small className="text-muted">Following</small>
-                    </div>
-                  </div>
-
-                  <button 
-                    className="btn btn-primary btn-lg w-100 rounded-pill"
-                    onClick={() => setShowProfileModal(true)}
-                    style={{ 
-                      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                      border: 'none',
-                      fontWeight: '600'
-                    }}
-                  >
-                    <i className="bi bi-person-circle me-2"></i>
-                    View Profile Details
-                    {notifications.length > 0 && (
-                      <span className="badge bg-light text-primary ms-2">{notifications.length}</span>
-                    )}
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Posts Section */}
-            <div className="col-md-8">
+            <div className="col-12">
               <div className="d-flex justify-content-between align-items-center mb-4">
                 <h3 className="text-white fw-bold mb-0">Your Feed</h3>
-                <div className="d-flex gap-2">
-                  <button 
-                    className="btn btn-light rounded-pill"
-                    onClick={fetchPosts}
-                    disabled={postsLoading}
-                  >
-                    {postsLoading ? (
-                      <span className="spinner-border spinner-border-sm me-2" role="status"></span>
-                    ) : (
-                      <i className="bi bi-arrow-clockwise me-2"></i>
-                    )}
-                    Refresh
-                  </button>
-                  <button onClick={() => navigate('/uploads')} className="btn btn-light rounded-pill">
-                    <i className="bi bi-upload me-2"></i>
-                    Upload Posts
-                  </button>
-                </div>
+                <button 
+                  className="btn btn-light rounded-pill"
+                  onClick={fetchPosts}
+                  disabled={postsLoading}
+                >
+                  {postsLoading ? (
+                    <span className="spinner-border spinner-border-sm me-2" role="status"></span>
+                  ) : (
+                    <i className="bi bi-arrow-clockwise me-2"></i>
+                  )}
+                  Refresh
+                </button>
               </div>
 
               {postsLoading ? (
@@ -597,161 +563,164 @@ const Dashboard = ({ onLogout }) => {
                 </div>
               ) : (
                 <div className="posts-container">
-                  {posts.map((post) => (
-                    <div key={post._id} className="card border-0 shadow-sm mb-4" style={{ borderRadius: '20px' }}>
-                      <div className="card-header border-0 bg-white" style={{ borderRadius: '20px 20px 0 0' }}>
-                        <div className="d-flex align-items-center">
-                          <img
-                            src={post.author.profilePicture ? `http://localhost:5000${post.author.profilePicture}` : "https://via.placeholder.com/40x40/667eea/white?text=" + post.author.name.charAt(0)}
-                            alt={post.author.name}
-                            className="rounded-circle me-3"
-                            style={{ width: '40px', height: '40px', objectFit: 'cover' }}
-                          />
-                          <div className="flex-grow-1">
-                            <h6 className="mb-0 fw-bold">{post.author.name}</h6>
-                            <small className="text-muted">{formatDate(post.createdAt)}</small>
-                          </div>
-                          {post.author._id === user._id && (
-                            <span className="badge bg-primary rounded-pill">You</span>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="card-body p-0">
-                        {post.image && (
-                          <div className="position-relative">
-                            {post.image.includes('.mp4') || post.image.includes('.mov') || post.image.includes('.avi') ? (
-                              <video 
-                                controls 
-                                className="w-100" 
-                                style={{ maxHeight: '400px', objectFit: 'cover' }}
-                                src={`http://localhost:5000${post.image}`}
+                  <div className="row">
+                    {posts.map((post) => (
+                      <div key={post._id} className="col-lg-6 col-xl-4 mb-4">
+                        <div className="card border-0 shadow-sm h-100" style={{ borderRadius: '20px' }}>
+                          <div className="card-header border-0 bg-white" style={{ borderRadius: '20px 20px 0 0' }}>
+                            <div className="d-flex align-items-center">
+                              <img
+                                src={post.author.profilePicture ? `http://localhost:5000${post.author.profilePicture}` : "https://via.placeholder.com/35x35/667eea/white?text=" + post.author.name.charAt(0)}
+                                alt={post.author.name}
+                                className="rounded-circle me-3"
+                                style={{ width: '35px', height: '35px', objectFit: 'cover' }}
                               />
-                            ) : (
-                              <img 
-                                src={`http://localhost:5000${post.image}`} 
-                                alt="Post content" 
-                                className="w-100"
-                                style={{ maxHeight: '400px', objectFit: 'cover' }}
-                              />
-                            )}
-                          </div>
-                        )}
-
-                        <div className="p-3">
-                          <p className="mb-3">{post.text}</p>
-
-                          <div className="d-flex justify-content-between align-items-center mb-3">
-                            <div className="d-flex gap-3">
-                              {['like', 'love', 'laugh', 'wow', 'sad', 'angry'].map((reactionType) => {
-                                const count = post.reactions[reactionType] || 0;
-                                const isActive = post.userReaction === reactionType;
-                                const icons = {
-                                  like: '👍',
-                                  love: '❤️',
-                                  laugh: '😂',
-                                  wow: '😮',
-                                  sad: '😢',
-                                  angry: '😠'
-                                };
-                                
-                                return (
-                                  <button
-                                    key={reactionType}
-                                    className={`btn btn-sm ${isActive ? 'btn-primary' : 'btn-outline-secondary'} rounded-pill`}
-                                    onClick={() => handleReaction(post._id, reactionType)}
-                                    style={{ minWidth: '60px' }}
-                                  >
-                                    <span className="me-1">{icons[reactionType]}</span>
-                                    {count > 0 && <span>{count}</span>}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                            <button
-                              className="btn btn-outline-secondary btn-sm"
-                              onClick={() => toggleComments(post._id)}
-                            >
-                              <i className="bi bi-chat me-1"></i>
-                              {post.commentCount} comment{post.commentCount !== 1 ? 's' : ''}
-                              <i className={`bi bi-chevron-${showComments[post._id] ? 'up' : 'down'} ms-1`}></i>
-                            </button>
-                          </div>
-
-                          {showComments[post._id] && (
-                            <>
-                              {post.comments && post.comments.length > 0 && (
-                                <div className="mb-3">
-                                  <h6 className="fw-bold mb-2">Comments</h6>
-                                  <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
-                                    {post.comments.map((comment, index) => (
-                                      <div key={index} className="d-flex mb-2">
-                                        <img
-                                          src={comment.author.profilePicture ? `http://localhost:5000${comment.author.profilePicture}` : "https://via.placeholder.com/32x32/667eea/white?text=" + comment.author.name.charAt(0)}
-                                          alt={comment.author.name}
-                                          className="rounded-circle me-2"
-                                          style={{ width: '32px', height: '32px', objectFit: 'cover' }}
-                                        />
-                                        <div className="flex-grow-1">
-                                          <div className="bg-light rounded p-2">
-                                            <h6 className="mb-1 fw-semibold" style={{ fontSize: '0.9rem' }}>
-                                              {comment.author.name}
-                                              {comment.author._id === user._id && (
-                                                <span className="badge bg-primary ms-1" style={{ fontSize: '0.6rem' }}>You</span>
-                                              )}
-                                            </h6>
-                                            <p className="mb-0" style={{ fontSize: '0.85rem' }}>{comment.text}</p>
-                                          </div>
-                                          <small className="text-muted ms-2">{formatDate(comment.createdAt)}</small>
-                                        </div>
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-                              )}
-
-                              <div className="d-flex gap-2">
-                                <img
-                                  src={user.profilePicture ? `http://localhost:5000${user.profilePicture}` : "https://via.placeholder.com/32x32/667eea/white?text=" + user.name.charAt(0)}
-                                  alt="Your profile"
-                                  className="rounded-circle"
-                                  style={{ width: '32px', height: '32px', objectFit: 'cover' }}
-                                />
-                                <div className="flex-grow-1">
-                                  <div className="input-group">
-                                    <input
-                                      type="text"
-                                      className="form-control rounded-pill"
-                                      placeholder="Write a comment..."
-                                      value={commentTexts[post._id] || ''}
-                                      onChange={(e) => setCommentTexts(prev => ({ ...prev, [post._id]: e.target.value }))}
-                                      onKeyPress={(e) => {
-                                        if (e.key === 'Enter') {
-                                          handleAddComment(post._id);
-                                        }
-                                      }}
-                                      disabled={submittingComment[post._id]}
-                                    />
-                                    <button
-                                      className="btn btn-primary rounded-pill ms-2"
-                                      onClick={() => handleAddComment(post._id)}
-                                      disabled={submittingComment[post._id] || !commentTexts[post._id]?.trim()}
-                                    >
-                                      {submittingComment[post._id] ? (
-                                        <span className="spinner-border spinner-border-sm" role="status"></span>
-                                      ) : (
-                                        <i className="bi bi-send"></i>
-                                      )}
-                                    </button>
-                                  </div>
-                                </div>
+                              <div className="flex-grow-1">
+                                <h6 className="mb-0 fw-bold small">{post.author.name}</h6>
+                                <small className="text-muted">{formatDate(post.createdAt)}</small>
                               </div>
-                            </>
-                          )}
+                              {post.author._id === user._id && (
+                                <span className="badge bg-primary rounded-pill small">You</span>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="card-body p-0">
+                            {post.image && (
+                              <div className="position-relative">
+                                {post.image.includes('.mp4') || post.image.includes('.mov') || post.image.includes('.avi') ? (
+                                  <video 
+                                    controls 
+                                    className="w-100" 
+                                    style={{ maxHeight: '300px', objectFit: 'cover' }}
+                                    src={`http://localhost:5000${post.image}`}
+                                  />
+                                ) : (
+                                  <img 
+                                    src={`http://localhost:5000${post.image}`} 
+                                    alt="Post content" 
+                                    className="w-100"
+                                    style={{ maxHeight: '300px', objectFit: 'cover' }}
+                                  />
+                                )}
+                              </div>
+                            )}
+
+                            <div className="p-3">
+                              <p className="mb-3 small">{post.text}</p>
+
+                              <div className="d-flex justify-content-between align-items-center mb-3">
+                                <div className="d-flex gap-1 flex-wrap">
+                                  {['like', 'love', 'laugh', 'wow', 'sad', 'angry'].map((reactionType) => {
+                                    const count = post.reactions[reactionType] || 0;
+                                    const isActive = post.userReaction === reactionType;
+                                    const icons = {
+                                      like: '👍',
+                                      love: '❤️',
+                                      laugh: '😂',
+                                      wow: '😮',
+                                      sad: '😢',
+                                      angry: '😠'
+                                    };
+                                    
+                                    return (
+                                      <button
+                                        key={reactionType}
+                                        className={`btn btn-sm ${isActive ? 'btn-primary' : 'btn-outline-secondary'} rounded-pill px-2 py-1`}
+                                        onClick={() => handleReaction(post._id, reactionType)}
+                                        style={{ fontSize: '0.7rem', minWidth: '35px' }}
+                                      >
+                                        <span>{icons[reactionType]}</span>
+                                        {count > 0 && <span className="ms-1">{count}</span>}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                                <button
+                                  className="btn btn-outline-secondary btn-sm"
+                                  onClick={() => toggleComments(post._id)}
+                                >
+                                  <i className="bi bi-chat me-1"></i>
+                                  {post.commentCount}
+                                  <i className={`bi bi-chevron-${showComments[post._id] ? 'up' : 'down'} ms-1`}></i>
+                                </button>
+                              </div>
+
+                              {showComments[post._id] && (
+                                <>
+                                  {post.comments && post.comments.length > 0 && (
+                                    <div className="mb-3">
+                                      <div style={{ maxHeight: '150px', overflowY: 'auto' }}>
+                                        {post.comments.map((comment, index) => (
+                                          <div key={index} className="d-flex mb-2">
+                                            <img
+                                              src={comment.author.profilePicture ? `http://localhost:5000${comment.author.profilePicture}` : "https://via.placeholder.com/24x24/667eea/white?text=" + comment.author.name.charAt(0)}
+                                              alt={comment.author.name}
+                                              className="rounded-circle me-2"
+                                              style={{ width: '24px', height: '24px', objectFit: 'cover' }}
+                                            />
+                                            <div className="flex-grow-1">
+                                              <div className="bg-light rounded p-2">
+                                                <h6 className="mb-1 fw-semibold" style={{ fontSize: '0.8rem' }}>
+                                                  {comment.author.name}
+                                                  {comment.author._id === user._id && (
+                                                    <span className="badge bg-primary ms-1" style={{ fontSize: '0.5rem' }}>You</span>
+                                                  )}
+                                                </h6>
+                                                <p className="mb-0" style={{ fontSize: '0.75rem' }}>{comment.text}</p>
+                                              </div>
+                                              <small className="text-muted ms-2">{formatDate(comment.createdAt)}</small>
+                                            </div>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  <div className="d-flex gap-2">
+                                    <img
+                                      src={user.profilePicture ? `http://localhost:5000${user.profilePicture}` : "https://via.placeholder.com/24x24/667eea/white?text=" + user.name.charAt(0)}
+                                      alt="Your profile"
+                                      className="rounded-circle"
+                                      style={{ width: '24px', height: '24px', objectFit: 'cover' }}
+                                    />
+                                    <div className="flex-grow-1">
+                                      <div className="input-group">
+                                        <input
+                                          type="text"
+                                          className="form-control form-control-sm rounded-pill"
+                                          placeholder="Write a comment..."
+                                          value={commentTexts[post._id] || ''}
+                                          onChange={(e) => setCommentTexts(prev => ({ ...prev, [post._id]: e.target.value }))}
+                                          onKeyPress={(e) => {
+                                            if (e.key === 'Enter') {
+                                              handleAddComment(post._id);
+                                            }
+                                          }}
+                                          disabled={submittingComment[post._id]}
+                                        />
+                                        <button
+                                          className="btn btn-primary btn-sm rounded-pill ms-2"
+                                          onClick={() => handleAddComment(post._id)}
+                                          disabled={submittingComment[post._id] || !commentTexts[post._id]?.trim()}
+                                        >
+                                          {submittingComment[post._id] ? (
+                                            <span className="spinner-border spinner-border-sm" role="status"></span>
+                                          ) : (
+                                            <i className="bi bi-send"></i>
+                                          )}
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
@@ -783,8 +752,7 @@ const Dashboard = ({ onLogout }) => {
                         <img
                           src={user.profilePicture ? `http://localhost:5000${user.profilePicture}` : "https://via.placeholder.com/120x120/667eea/white?text=" + user.name.charAt(0)}
                           alt="Profile"
-                          className="rounded-circle"
-                          style={{ width: '120px', height: '120px', objectFit: 'cover', border: '4px solid #667eea' }}
+                          className="rounded-circle"style={{ width: '120px', height: '120px', objectFit: 'cover', border: '4px solid #667eea' }}
                         />
                         <label 
                           className="position-absolute bottom-0 end-0 btn btn-primary btn-sm rounded-circle"
