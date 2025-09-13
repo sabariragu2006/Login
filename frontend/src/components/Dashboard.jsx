@@ -1,71 +1,86 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import FeedSection from './dashboard/FeedSection';
+import ProfileModal from './dashboard/ProfileModal';
+import Messages from './Messages/Messages';
+import StoryModal from './Messages/StoryModal';
+import DiscoverPeopleSection from './dashboard/DiscoverPeopleSection';
 
 const Dashboard = ({ onLogout }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [showProfileModal, setShowProfileModal] = useState(false);
+
+  // Posts State
   const [posts, setPosts] = useState([]);
   const [postsLoading, setPostsLoading] = useState(false);
-  const [bio, setBio] = useState("");
-  const [updating, setUpdating] = useState(false);
-  const [uploadingProfile, setUploadingProfile] = useState(false);
   const [commentTexts, setCommentTexts] = useState({});
   const [submittingComment, setSubmittingComment] = useState({});
   const [showComments, setShowComments] = useState({});
-  
-  // New states for follow system
+
+  // Follow System State
   const [allUsers, setAllUsers] = useState([]);
   const [usersLoading, setUsersLoading] = useState(false);
   const [followRequests, setFollowRequests] = useState([]);
   const [notifications, setNotifications] = useState([]);
-  const [showNotifications, setShowNotifications] = useState(false);
-  const [followingUsers, setFollowingUsers] = useState([]);
-  
+
+  // Modal States
+  const [showProfileModal, setShowProfileModal] = useState(false);
+  const [showMessagesModal, setShowMessagesModal] = useState(false);
+  const [showFollowersModal, setShowFollowersModal] = useState(false);
+  const [showFollowingModal, setShowFollowingModal] = useState(false);
+
+  // Stories State
+  const [stories, setStories] = useState([]);
+  const [storiesLoading, setStoriesLoading] = useState(false);
+  const [showStoryModal, setShowStoryModal] = useState(false);
+  const [currentStoryUser, setCurrentStoryUser] = useState(null);
+  const [currentStoryIndex, setCurrentStoryIndex] = useState(0);
+
+  // Profile States
+  const [bio, setBio] = useState("");
+  const [updating, setUpdating] = useState(false);
+  const [uploadingProfile, setUploadingProfile] = useState(false);
+
   const navigate = useNavigate();
 
+  // Initialize user data and bio
   useEffect(() => {
     fetchUserData();
   }, []);
 
   useEffect(() => {
     if (user) {
+      setBio(user.bio || "");
       fetchAllUsers();
       fetchFollowRequests();
       fetchNotifications();
-      fetchPosts(); // Now fetches posts from followed users only
+      fetchPosts();
+      fetchStories();
     }
   }, [user]);
 
+  // --- FETCHING DATA ---
   const fetchUserData = async () => {
     try {
       setLoading(true);
-      
       const storedUser = localStorage.getItem("user");
       if (!storedUser) {
         setError("No user found. Please login again.");
         setLoading(false);
         return;
       }
-
       const userData = JSON.parse(storedUser);
-      
       const response = await fetch(`http://localhost:5000/users/${userData._id}`, {
         method: 'GET',
         credentials: 'include'
       });
-
       if (!response.ok) {
         throw new Error('Failed to fetch user data');
       }
-
       const data = await response.json();
       setUser(data.user);
-      setBio(data.user.bio || "");
-      
       localStorage.setItem("user", JSON.stringify(data.user));
-      
     } catch (err) {
       console.error('Error fetching user data:', err);
       setError(err.message || 'Failed to load user data');
@@ -74,14 +89,33 @@ const Dashboard = ({ onLogout }) => {
     }
   };
 
-  const fetchAllUsers = async () => {
+  const fetchStories = async () => {
+    if (!user) return;
     try {
-      setUsersLoading(true);
-      const response = await fetch(`http://localhost:5000/users?excludeId=${user._id}`, {
+      setStoriesLoading(true);
+      const response = await fetch(`http://localhost:5000/stories/${user._id}`, {
         method: 'GET',
         credentials: 'include'
       });
+      if (!response.ok) throw new Error('Failed to fetch stories');
+      const data = await response.json();
+      setStories(data.stories || []);
+    } catch (err) {
+      console.error('Error fetching stories:', err);
+    } finally {
+      setStoriesLoading(false);
+    }
+  };
 
+  const fetchAllUsers = async () => {
+    if (!user) return;
+    try {
+      setUsersLoading(true);
+      const timestamp = new Date().getTime();
+      const response = await fetch(`http://localhost:5000/users?excludeId=${user._id}&t=${timestamp}`, {
+        method: 'GET',
+        credentials: 'include'
+      });
       if (response.ok) {
         const data = await response.json();
         setAllUsers(data.users || []);
@@ -94,12 +128,12 @@ const Dashboard = ({ onLogout }) => {
   };
 
   const fetchFollowRequests = async () => {
+    if (!user) return;
     try {
       const response = await fetch(`http://localhost:5000/follow-requests/${user._id}`, {
         method: 'GET',
         credentials: 'include'
       });
-
       if (response.ok) {
         const data = await response.json();
         setFollowRequests(data.requests || []);
@@ -110,12 +144,12 @@ const Dashboard = ({ onLogout }) => {
   };
 
   const fetchNotifications = async () => {
+    if (!user) return;
     try {
       const response = await fetch(`http://localhost:5000/notifications/${user._id}`, {
         method: 'GET',
         credentials: 'include'
       });
-
       if (response.ok) {
         const data = await response.json();
         setNotifications(data.notifications || []);
@@ -127,23 +161,17 @@ const Dashboard = ({ onLogout }) => {
 
   const fetchPosts = async () => {
     if (!user) return;
-    
     try {
       setPostsLoading(true);
-      
-      // Fetch posts only from followed users
       const response = await fetch(`http://localhost:5000/posts/following/${user._id}`, {
         method: 'GET',
         credentials: 'include'
       });
-
       if (!response.ok) {
         throw new Error('Failed to fetch posts');
       }
-
       const data = await response.json();
       setPosts(data.posts || []);
-      
     } catch (err) {
       console.error('Error fetching posts:', err);
     } finally {
@@ -151,7 +179,50 @@ const Dashboard = ({ onLogout }) => {
     }
   };
 
+  // --- STORY HANDLERS ---
+  const handleStoryUpload = async (event) => {
+    const file = event.target.files[0];
+    if (!file || !user) return;
+    try {
+      const formData = new FormData();
+      formData.append('story', file);
+      const response = await fetch(`http://localhost:5000/upload-story/${user._id}`, {
+        method: 'POST',
+        credentials: 'include',
+        body: formData
+      });
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to upload story');
+      }
+      fetchStories();
+      event.target.value = '';
+    } catch (err) {
+      console.error('Error uploading story:', err);
+      alert(err.message || 'Failed to upload story');
+    }
+  };
+
+  const openStoryModal = (storyUser) => {
+    const userStories = stories.filter(s => s.author?._id === storyUser._id);
+    if (userStories.length > 0) {
+      setCurrentStoryUser(storyUser);
+      setCurrentStoryIndex(0);
+      setShowStoryModal(true);
+    } else {
+      console.warn(`No stories found for user: ${storyUser.name} (${storyUser._id})`);
+    }
+  };
+
+  const closeStoryModal = () => {
+    setShowStoryModal(false);
+    setCurrentStoryUser(null);
+    setCurrentStoryIndex(0);
+  };
+
+  // --- FOLLOW HANDLERS ---
   const sendFollowRequest = async (targetUserId) => {
+    if (!user) return;
     try {
       const response = await fetch('http://localhost:5000/send-follow-request', {
         method: 'POST',
@@ -164,13 +235,10 @@ const Dashboard = ({ onLogout }) => {
           toUserId: targetUserId
         })
       });
-
       if (response.ok) {
-        const data = await response.json();
-        // Update the user's follow status in the UI
-        setAllUsers(prev => 
-          prev.map(u => 
-            u._id === targetUserId 
+        setAllUsers(prev =>
+          prev.map(u =>
+            u._id === targetUserId
               ? { ...u, followStatus: 'pending' }
               : u
           )
@@ -186,6 +254,7 @@ const Dashboard = ({ onLogout }) => {
   };
 
   const handleFollowRequest = async (requestId, action) => {
+    if (!user) return;
     try {
       const response = await fetch('http://localhost:5000/handle-follow-request', {
         method: 'POST',
@@ -195,18 +264,16 @@ const Dashboard = ({ onLogout }) => {
         credentials: 'include',
         body: JSON.stringify({
           requestId,
-          action // 'accept' or 'reject'
+          action
         })
       });
-
       if (response.ok) {
-        // Refresh follow requests and notifications
         fetchFollowRequests();
         fetchNotifications();
-        fetchUserData(); // Refresh user data to update follower/following counts
-        
+        fetchUserData(); // Refreshes following/followers count
         if (action === 'accept') {
-          fetchPosts(); // Refresh posts to show new followed user's posts
+          fetchPosts();
+          fetchAllUsers(); // IMMEDIATELY refresh all users
         }
       } else {
         const errorData = await response.json();
@@ -218,6 +285,7 @@ const Dashboard = ({ onLogout }) => {
     }
   };
 
+  // --- COMMENT HANDLERS ---
   const toggleComments = (postId) => {
     setShowComments(prev => ({
       ...prev,
@@ -227,11 +295,9 @@ const Dashboard = ({ onLogout }) => {
 
   const handleAddComment = async (postId) => {
     const commentText = commentTexts[postId];
-    if (!commentText || !commentText.trim()) return;
-
+    if (!commentText || !commentText.trim() || !user) return;
     try {
       setSubmittingComment(prev => ({ ...prev, [postId]: true }));
-      
       const response = await fetch('http://localhost:5000/add-comment', {
         method: 'POST',
         headers: {
@@ -244,15 +310,12 @@ const Dashboard = ({ onLogout }) => {
           text: commentText.trim()
         })
       });
-
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.message || 'Failed to add comment');
       }
-
       const data = await response.json();
-      
-      setPosts(prevPosts => 
+      setPosts(prevPosts =>
         prevPosts.map(post => {
           if (post._id === postId) {
             return {
@@ -264,10 +327,8 @@ const Dashboard = ({ onLogout }) => {
           return post;
         })
       );
-      
       setCommentTexts(prev => ({ ...prev, [postId]: '' }));
       setShowComments(prev => ({ ...prev, [postId]: true }));
-      
     } catch (err) {
       console.error('Error adding comment:', err);
       alert(err.message || 'Failed to add comment');
@@ -276,49 +337,14 @@ const Dashboard = ({ onLogout }) => {
     }
   };
 
-  const handleReaction = async (postId, reactionType) => {
-    try {
-      const response = await fetch('http://localhost:5000/add-reaction', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify({
-          userId: user._id,
-          postId: postId,
-          reactionType: reactionType
-        })
-      });
+  // --- REACTION HANDLERS --- (REMOVED - NO LONGER USED)
+  // Deleted: handleReaction function
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to add reaction');
-      }
-
-      const data = await response.json();
-      
-      setPosts(prevPosts => 
-        prevPosts.map(post => {
-          if (post._id === postId) {
-            return data.post;
-          }
-          return post;
-        })
-      );
-      
-    } catch (err) {
-      console.error('Error adding reaction:', err);
-      alert(err.message || 'Failed to add reaction');
-    }
-  };
-
+  // --- PROFILE HANDLERS ---
   const handleUpdateBio = async () => {
     if (!user) return;
-    
     try {
       setUpdating(true);
-      
       const response = await fetch(`http://localhost:5000/update-bio/${user._id}`, {
         method: 'PUT',
         headers: {
@@ -327,18 +353,14 @@ const Dashboard = ({ onLogout }) => {
         credentials: 'include',
         body: JSON.stringify({ bio: bio.trim() })
       });
-
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.message || 'Failed to update bio');
       }
-
       const data = await response.json();
-      
       const updatedUser = { ...user, bio: data.bio };
       setUser(updatedUser);
       localStorage.setItem("user", JSON.stringify(updatedUser));
-      
     } catch (err) {
       console.error('Error updating bio:', err);
       alert(err.message || 'Failed to update bio');
@@ -350,30 +372,23 @@ const Dashboard = ({ onLogout }) => {
   const handleProfilePictureUpload = async (event) => {
     const file = event.target.files[0];
     if (!file || !user) return;
-
     try {
       setUploadingProfile(true);
-      
       const formData = new FormData();
       formData.append('profilePicture', file);
-
       const response = await fetch(`http://localhost:5000/update-profile-picture/${user._id}`, {
         method: 'PUT',
         credentials: 'include',
         body: formData
       });
-
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.message || 'Failed to update profile picture');
       }
-
       const data = await response.json();
-      
       const updatedUser = { ...user, profilePicture: data.profilePicture };
       setUser(updatedUser);
       localStorage.setItem("user", JSON.stringify(updatedUser));
-      
     } catch (err) {
       console.error('Error uploading profile picture:', err);
       alert(err.message || 'Failed to update profile picture');
@@ -382,590 +397,851 @@ const Dashboard = ({ onLogout }) => {
     }
   };
 
+  // --- UTILITIES ---
   const formatDate = (dateString) => {
     const date = new Date(dateString);
     const now = new Date();
     const diffInHours = (now - date) / (1000 * 60 * 60);
-    
     if (diffInHours < 1) return 'Just now';
     if (diffInHours < 24) return `${Math.floor(diffInHours)}h ago`;
     if (diffInHours < 168) return `${Math.floor(diffInHours / 24)}d ago`;
     return date.toLocaleDateString();
   };
 
+  const userPostCount = posts.filter(post => post.author._id === user?._id).length;
+
+  // --- RENDERING ---
   if (loading) {
     return (
-      <div className="d-flex justify-content-center align-items-center" style={{ height: '100vh', background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}>
-        <div className="text-center text-white">
-          <div className="spinner-border text-light mb-3" role="status">
-            <span className="visually-hidden">Loading...</span>
+      <>
+        <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/css/bootstrap.min.css" rel="stylesheet" />
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.10.0/font/bootstrap-icons.min.css" />
+        <div className="socialsphere-loading">
+          <div className="loading-container">
+            <div className="socialsphere-logo">
+              <div className="logo-icon">
+                <i className="bi bi-globe"></i>
+              </div>
+              <h1 className="logo-text">SocialSphere</h1>
+            </div>
+            <div className="loading-spinner">
+              <div className="spinner-ring"></div>
+              <div className="spinner-ring"></div>
+              <div className="spinner-ring"></div>
+            </div>
+            <p className="loading-text">Welcome back! Loading your social universe...</p>
           </div>
-          <h4>Loading Dashboard</h4>
-          <p>Fetching your data...</p>
         </div>
-      </div>
+        <style jsx>{`
+          .socialsphere-loading {
+            min-height: 100vh;
+            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 25%, #a855f7 50%, #c084fc 75%, #e879f9 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            overflow: hidden;
+          }
+          .socialsphere-loading::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: 
+              radial-gradient(circle at 20% 80%, rgba(120, 119, 198, 0.3) 0%, transparent 50%),
+              radial-gradient(circle at 80% 20%, rgba(255, 255, 255, 0.15) 0%, transparent 50%),
+              radial-gradient(circle at 40% 40%, rgba(120, 119, 198, 0.2) 0%, transparent 50%);
+            animation: float 6s ease-in-out infinite;
+          }
+          .loading-container {
+            text-align: center;
+            z-index: 1;
+            color: white;
+          }
+          .socialsphere-logo {
+            margin-bottom: 2rem;
+            animation: logoGlow 2s ease-in-out infinite alternate;
+          }
+          .logo-icon {
+            font-size: 4rem;
+            margin-bottom: 1rem;
+            background: linear-gradient(45deg, #fff, #e0e7ff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            filter: drop-shadow(0 4px 8px rgba(0,0,0,0.3));
+          }
+          .logo-text {
+            font-size: 2.5rem;
+            font-weight: 800;
+            margin: 0;
+            background: linear-gradient(45deg, #fff, #e0e7ff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+          }
+          .loading-spinner {
+            position: relative;
+            width: 80px;
+            height: 80px;
+            margin: 0 auto 2rem;
+          }
+          .spinner-ring {
+            position: absolute;
+            width: 80px;
+            height: 80px;
+            border: 4px solid transparent;
+            border-top: 4px solid rgba(255, 255, 255, 0.8);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+          }
+          .spinner-ring:nth-child(2) {
+            width: 60px;
+            height: 60px;
+            top: 10px;
+            left: 10px;
+            border-top: 4px solid rgba(255, 255, 255, 0.6);
+            animation: spin 1.5s linear infinite reverse;
+          }
+          .spinner-ring:nth-child(3) {
+            width: 40px;
+            height: 40px;
+            top: 20px;
+            left: 20px;
+            border-top: 4px solid rgba(255, 255, 255, 0.4);
+            animation: spin 2s linear infinite;
+          }
+          .loading-text {
+            font-size: 1.1rem;
+            opacity: 0.9;
+            font-weight: 500;
+            margin: 0;
+            animation: pulse 2s ease-in-out infinite;
+          }
+          @keyframes float {
+            0%, 100% { transform: translateY(0px) rotate(0deg); }
+            50% { transform: translateY(-20px) rotate(5deg); }
+          }
+          @keyframes logoGlow {
+            0% { filter: drop-shadow(0 4px 8px rgba(255,255,255,0.3)); }
+            100% { filter: drop-shadow(0 6px 12px rgba(255,255,255,0.5)); }
+          }
+          @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+          }
+          @keyframes pulse {
+            0%, 100% { opacity: 0.7; }
+            50% { opacity: 1; }
+          }
+        `}</style>
+      </>
     );
   }
 
   if (error || !user) {
     return (
-      <div className="d-flex justify-content-center align-items-center" style={{ height: '100vh', background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}>
-        <div className="text-center text-white">
-          <h4>Error Loading Dashboard</h4>
-          <p>{error || "Please login to view your dashboard"}</p>
-          <button className="btn btn-light mt-3" onClick={fetchUserData}>
-            Retry
-          </button>
+      <>
+        <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/css/bootstrap.min.css" rel="stylesheet" />
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.10.0/font/bootstrap-icons.min.css" />
+        <div className="socialsphere-error">
+          <div className="error-container">
+            <div className="error-icon">
+              <i className="bi bi-exclamation-triangle"></i>
+            </div>
+            <h3 className="error-title">Oops! Something went wrong</h3>
+            <p className="error-message">{error || "Please login to view your dashboard"}</p>
+            <button className="btn-retry" onClick={fetchUserData}>
+              <i className="bi bi-arrow-clockwise me-2"></i>
+              Try Again
+            </button>
+          </div>
         </div>
-      </div>
+        <style jsx>{`
+          .socialsphere-error {
+            min-height: 100vh;
+            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 25%, #a855f7 50%, #c084fc 75%, #e879f9 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+          }
+          .error-container {
+            text-align: center;
+            max-width: 400px;
+            padding: 2rem;
+          }
+          .error-icon {
+            font-size: 4rem;
+            margin-bottom: 1.5rem;
+            opacity: 0.9;
+          }
+          .error-title {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+          }
+          .error-message {
+            font-size: 1rem;
+            opacity: 0.8;
+            margin-bottom: 2rem;
+            line-height: 1.5;
+          }
+          .btn-retry {
+            background: rgba(255, 255, 255, 0.2);
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            color: white;
+            padding: 12px 24px;
+            border-radius: 50px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            backdrop-filter: blur(10px);
+          }
+          .btn-retry:hover {
+            background: rgba(255, 255, 255, 0.3);
+            border-color: rgba(255, 255, 255, 0.5);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.2);
+          }
+        `}</style>
+      </>
     );
   }
 
-  const userPostCount = posts.filter(post => post.author._id === user._id).length;
-
   return (
     <>
+      {/* Bootstrap CSS & Icons */}
       <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/css/bootstrap.min.css" rel="stylesheet" />
       <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.10.0/font/bootstrap-icons.min.css" />
-      
-      <div style={{ 
-        minHeight: '100vh', 
-        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-        padding: '20px'
-      }}>
-        <div className="container">
-          {/* Header with Profile Button */}
-          <div className="d-flex justify-content-between align-items-center mb-4">
-            <h2 className="text-white fw-bold mb-0">Dashboard</h2>
-            <div className="d-flex align-items-center gap-3">
-              <button 
-                className="btn btn-light rounded-pill position-relative"
-                onClick={() => setShowProfileModal(true)}
-              >
-                <img
-                  src={user.profilePicture ? `http://localhost:5000${user.profilePicture}` : "https://via.placeholder.com/30x30/667eea/white?text=" + user.name.charAt(0)}
-                  alt="Profile"
-                  className="rounded-circle me-2"
-                  style={{ width: '30px', height: '30px', objectFit: 'cover' }}
-                />
-                Profile
-                {(notifications.length > 0 || followRequests.length > 0) && (
-                  <span className="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" style={{ fontSize: '0.6rem' }}>
-                    {notifications.length + followRequests.length}
-                  </span>
-                )}
-              </button>
-              <button onClick={() => navigate('/uploads')} className="btn btn-light rounded-pill">
-                <i className="bi bi-upload me-2"></i>
-                Upload Posts
-              </button>
-            </div>
-          </div>
 
-          {/* Compact Users Section */}
-          <div className="row mb-4">
-            <div className="col-12">
-              <div className="card shadow-lg border-0" style={{ borderRadius: '15px' }}>
-                <div className="card-header border-0 bg-white py-2" style={{ borderRadius: '15px 15px 0 0' }}>
-                  <h6 className="mb-0 fw-bold">
-                    <i className="bi bi-people me-2"></i>
-                    Discover People
-                  </h6>
+      <div className="socialsphere-dashboard">
+        <div className="dashboard-background">
+          <div className="bg-pattern"></div>
+        </div>
+
+        {/* Top Navigation Bar */}
+        <nav className="socialsphere-nav">
+          <div className="container">
+            <div className="nav-content">
+              <div className="nav-brand">
+                <div className="brand-icon">
+                  <i className="bi bi-globe"></i>
                 </div>
-                <div className="card-body py-2">
-                  {usersLoading ? (
-                    <div className="text-center py-2">
-                      <div className="spinner-border spinner-border-sm" role="status">
-                        <span className="visually-hidden">Loading users...</span>
-                      </div>
-                    </div>
-                  ) : allUsers.length === 0 ? (
-                    <p className="text-muted text-center mb-0 small">No other users found</p>
-                  ) : (
-                    <div className="row g-2">
-                      {allUsers.slice(0, 8).map((otherUser) => (
-                        <div key={otherUser._id} className="col-xl-3 col-lg-4 col-md-6 col-sm-6">
-                          <div className="card border-0 bg-light h-100">
-                            <div className="card-body text-center p-2">
-                              <img
-                                src={otherUser.profilePicture ? `http://localhost:5000${otherUser.profilePicture}` : "https://via.placeholder.com/40x40/667eea/white?text=" + otherUser.name.charAt(0)}
-                                alt={otherUser.name}
-                                className="rounded-circle mb-1"
-                                style={{ width: '40px', height: '40px', objectFit: 'cover' }}
-                              />
-                              <h6 className="fw-bold mb-0 small">{otherUser.name.length > 12 ? otherUser.name.substring(0, 12) + '...' : otherUser.name}</h6>
-                              <p className="text-muted mb-2" style={{ fontSize: '0.7rem' }}>{otherUser.postsCount} posts</p>
-                              
-                              {otherUser.followStatus === 'following' ? (
-                                <button className="btn btn-success btn-sm rounded-pill px-2 py-1" disabled style={{ fontSize: '0.7rem' }}>
-                                  <i className="bi bi-check-lg"></i>
-                                  Following
-                                </button>
-                              ) : otherUser.followStatus === 'pending' ? (
-                                <button className="btn btn-warning btn-sm rounded-pill px-2 py-1" disabled style={{ fontSize: '0.7rem' }}>
-                                  <i className="bi bi-clock"></i>
-                                  Pending
-                                </button>
-                              ) : (
-                                <button 
-                                  className="btn btn-primary btn-sm rounded-pill px-2 py-1"
-                                  onClick={() => sendFollowRequest(otherUser._id)}
-                                  style={{ fontSize: '0.7rem' }}
-                                >
-                                  <i className="bi bi-person-plus"></i>
-                                  Follow
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                <span className="brand-text">SocialSphere</span>
               </div>
-            </div>
-          </div>
-
-          {/* Posts Section - Full Width */}
-          <div className="row">
-            <div className="col-12">
-              <div className="d-flex justify-content-between align-items-center mb-4">
-                <h3 className="text-white fw-bold mb-0">Your Feed</h3>
+              <div className="nav-actions">
                 <button 
-                  className="btn btn-light rounded-pill"
-                  onClick={fetchPosts}
-                  disabled={postsLoading}
+                  className="nav-btn"
+                  onClick={() => navigate('/uploads')}
+                  title="Create Post"
                 >
-                  {postsLoading ? (
-                    <span className="spinner-border spinner-border-sm me-2" role="status"></span>
-                  ) : (
-                    <i className="bi bi-arrow-clockwise me-2"></i>
-                  )}
-                  Refresh
+                  <i className="bi bi-plus-lg"></i>
                 </button>
+                <button 
+                  className="nav-btn position-relative"
+                  onClick={() => setShowMessagesModal(true)}
+                  title="Messages"
+                >
+                  <i className="bi bi-chat-dots"></i>
+                </button>
+                <button 
+                  className="nav-btn position-relative"
+                  onClick={() => setShowProfileModal(true)}
+                  title="Notifications"
+                >
+                  <i className="bi bi-bell"></i>
+                  {(notifications.length > 0 || followRequests.length > 0) && (
+                    <span className="notification-dot"></span>
+                  )}
+                </button>
+                <div 
+                  className="nav-profile"
+                  onClick={() => setShowProfileModal(true)}
+                >
+                  <img
+                    src={user.profilePicture 
+                      ? `http://localhost:5000${user.profilePicture}` 
+                      : `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=8b5cf6&color=fff&size=40`}
+                    alt={user.name}
+                  />
+                </div>
               </div>
+            </div>
+          </div>
+        </nav>
 
-              {postsLoading ? (
-                <div className="text-center text-white">
-                  <div className="spinner-border mb-3" role="status">
-                    <span className="visually-hidden">Loading posts...</span>
-                  </div>
-                  <p>Loading your feed...</p>
-                </div>
-              ) : posts.length === 0 ? (
-                <div className="card border-0 shadow-sm" style={{ borderRadius: '20px' }}>
-                  <div className="card-body text-center p-5">
-                    <i className="bi bi-people text-muted" style={{ fontSize: '3rem' }}></i>
-                    <h5 className="mt-3 text-muted">Your feed is empty</h5>
-                    <p className="text-muted">Follow people to see their posts in your feed!</p>
-                  </div>
-                </div>
-              ) : (
-                <div className="posts-container">
-                  <div className="row">
-                    {posts.map((post) => (
-                      <div key={post._id} className="col-lg-6 col-xl-4 mb-4">
-                        <div className="card border-0 shadow-sm h-100" style={{ borderRadius: '20px' }}>
-                          <div className="card-header border-0 bg-white" style={{ borderRadius: '20px 20px 0 0' }}>
-                            <div className="d-flex align-items-center">
-                              <img
-                                src={post.author.profilePicture ? `http://localhost:5000${post.author.profilePicture}` : "https://via.placeholder.com/35x35/667eea/white?text=" + post.author.name.charAt(0)}
-                                alt={post.author.name}
-                                className="rounded-circle me-3"
-                                style={{ width: '35px', height: '35px', objectFit: 'cover' }}
-                              />
-                              <div className="flex-grow-1">
-                                <h6 className="mb-0 fw-bold small">{post.author.name}</h6>
-                                <small className="text-muted">{formatDate(post.createdAt)}</small>
-                              </div>
-                              {post.author._id === user._id && (
-                                <span className="badge bg-primary rounded-pill small">You</span>
-                              )}
-                            </div>
-                          </div>
+        <div className="dashboard-content">
+          <div className="container-fluid px-0 px-md-3">
+            <div className="row g-0 g-md-3">
 
-                          <div className="card-body p-0">
-                            {post.image && (
-                              <div className="position-relative">
-                                {post.image.includes('.mp4') || post.image.includes('.mov') || post.image.includes('.avi') ? (
-                                  <video 
-                                    controls 
-                                    className="w-100" 
-                                    style={{ maxHeight: '300px', objectFit: 'cover' }}
-                                    src={`http://localhost:5000${post.image}`}
-                                  />
-                                ) : (
-                                  <img 
-                                    src={`http://localhost:5000${post.image}`} 
-                                    alt="Post content" 
-                                    className="w-100"
-                                    style={{ maxHeight: '300px', objectFit: 'cover' }}
-                                  />
-                                )}
-                              </div>
-                            )}
-
-                            <div className="p-3">
-                              <p className="mb-3 small">{post.text}</p>
-
-                              <div className="d-flex justify-content-between align-items-center mb-3">
-                                <div className="d-flex gap-1 flex-wrap">
-                                  {['like', 'love', 'laugh', 'wow', 'sad', 'angry'].map((reactionType) => {
-                                    const count = post.reactions[reactionType] || 0;
-                                    const isActive = post.userReaction === reactionType;
-                                    const icons = {
-                                      like: '👍',
-                                      love: '❤️',
-                                      laugh: '😂',
-                                      wow: '😮',
-                                      sad: '😢',
-                                      angry: '😠'
-                                    };
-                                    
-                                    return (
-                                      <button
-                                        key={reactionType}
-                                        className={`btn btn-sm ${isActive ? 'btn-primary' : 'btn-outline-secondary'} rounded-pill px-2 py-1`}
-                                        onClick={() => handleReaction(post._id, reactionType)}
-                                        style={{ fontSize: '0.7rem', minWidth: '35px' }}
-                                      >
-                                        <span>{icons[reactionType]}</span>
-                                        {count > 0 && <span className="ms-1">{count}</span>}
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                                <button
-                                  className="btn btn-outline-secondary btn-sm"
-                                  onClick={() => toggleComments(post._id)}
-                                >
-                                  <i className="bi bi-chat me-1"></i>
-                                  {post.commentCount}
-                                  <i className={`bi bi-chevron-${showComments[post._id] ? 'up' : 'down'} ms-1`}></i>
-                                </button>
-                              </div>
-
-                              {showComments[post._id] && (
-                                <>
-                                  {post.comments && post.comments.length > 0 && (
-                                    <div className="mb-3">
-                                      <div style={{ maxHeight: '150px', overflowY: 'auto' }}>
-                                        {post.comments.map((comment, index) => (
-                                          <div key={index} className="d-flex mb-2">
-                                            <img
-                                              src={comment.author.profilePicture ? `http://localhost:5000${comment.author.profilePicture}` : "https://via.placeholder.com/24x24/667eea/white?text=" + comment.author.name.charAt(0)}
-                                              alt={comment.author.name}
-                                              className="rounded-circle me-2"
-                                              style={{ width: '24px', height: '24px', objectFit: 'cover' }}
-                                            />
-                                            <div className="flex-grow-1">
-                                              <div className="bg-light rounded p-2">
-                                                <h6 className="mb-1 fw-semibold" style={{ fontSize: '0.8rem' }}>
-                                                  {comment.author.name}
-                                                  {comment.author._id === user._id && (
-                                                    <span className="badge bg-primary ms-1" style={{ fontSize: '0.5rem' }}>You</span>
-                                                  )}
-                                                </h6>
-                                                <p className="mb-0" style={{ fontSize: '0.75rem' }}>{comment.text}</p>
-                                              </div>
-                                              <small className="text-muted ms-2">{formatDate(comment.createdAt)}</small>
-                                            </div>
-                                          </div>
-                                        ))}
-                                      </div>
-                                    </div>
-                                  )}
-
-                                  <div className="d-flex gap-2">
-                                    <img
-                                      src={user.profilePicture ? `http://localhost:5000${user.profilePicture}` : "https://via.placeholder.com/24x24/667eea/white?text=" + user.name.charAt(0)}
-                                      alt="Your profile"
-                                      className="rounded-circle"
-                                      style={{ width: '24px', height: '24px', objectFit: 'cover' }}
-                                    />
-                                    <div className="flex-grow-1">
-                                      <div className="input-group">
-                                        <input
-                                          type="text"
-                                          className="form-control form-control-sm rounded-pill"
-                                          placeholder="Write a comment..."
-                                          value={commentTexts[post._id] || ''}
-                                          onChange={(e) => setCommentTexts(prev => ({ ...prev, [post._id]: e.target.value }))}
-                                          onKeyPress={(e) => {
-                                            if (e.key === 'Enter') {
-                                              handleAddComment(post._id);
-                                            }
-                                          }}
-                                          disabled={submittingComment[post._id]}
-                                        />
-                                        <button
-                                          className="btn btn-primary btn-sm rounded-pill ms-2"
-                                          onClick={() => handleAddComment(post._id)}
-                                          disabled={submittingComment[post._id] || !commentTexts[post._id]?.trim()}
-                                        >
-                                          {submittingComment[post._id] ? (
-                                            <span className="spinner-border spinner-border-sm" role="status"></span>
-                                          ) : (
-                                            <i className="bi bi-send"></i>
-                                          )}
-                                        </button>
-                                      </div>
-                                    </div>
-                                  </div>
-                                </>
-                              )}
-                            </div>
-                          </div>
+              {/* LEFT SIDEBAR — Profile + Follow Requests */}
+              {/* On mobile: Appears BELOW Stories, not beside */}
+              <div className={`col-12 col-md-4 col-lg-3 order-1 order-md-0 ${showProfileModal ? 'd-none' : ''}`}>
+                <div className="sidebar-content p-3 p-md-4">
+                  {/* User Profile Card */}
+                  <div className="profile-card bg-white rounded-4 shadow-sm border mb-4">
+                    <div className="profile-header text-center p-3">
+                      <div className="profile-avatar-container mb-3">
+                        <img
+                          src={user.profilePicture 
+                            ? `http://localhost:5000${user.profilePicture}` 
+                            : `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=8b5cf6&color=fff&size=80`}
+                          alt={user.name}
+                          className="profile-avatar"
+                          onError={(e) => {
+                            e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=8b5cf6&color=fff&size=80`;
+                          }}
+                        />
+                      </div>
+                      <h5 className="profile-name">{user.name}</h5>
+                      <p className="profile-bio mb-3">{user.bio || "Welcome to SocialSphere!"}</p>
+                      
+                      {/* Stats Row */}
+                      <div className="d-flex justify-content-center gap-4 mb-3">
+                        <div className="text-center cursor-pointer" onClick={() => setShowFollowersModal(true)}>
+                          <strong className="d-block fs-6 text-dark">{userPostCount}</strong>
+                          <small className="text-muted">Posts</small>
+                        </div>
+                        <div className="text-center cursor-pointer" onClick={() => setShowFollowersModal(true)}>
+                          <strong className="d-block fs-6 text-dark">{Array.isArray(user.followers) ? user.followers.length : 0}</strong>
+                          <small className="text-muted">Followers</small>
+                        </div>
+                        <div className="text-center cursor-pointer" onClick={() => setShowFollowingModal(true)}>
+                          <strong className="d-block fs-6 text-dark">{Array.isArray(user.following) ? user.following.length : 0}</strong>
+                          <small className="text-muted">Following</small>
                         </div>
                       </div>
-                    ))}
+                    </div>
                   </div>
+
+                  {/* Follow Requests Section */}
+                  {followRequests.length > 0 && (
+                    <div className="follow-requests-section bg-light rounded-4 p-3 border mb-4" style={{ backgroundColor: '#f9f7ff' }}>
+                      <h6 className="mb-3 d-flex align-items-center text-primary">
+                        <i className="bi bi-person-plus-fill me-2"></i>
+                        Follow Requests ({followRequests.length})
+                      </h6>
+                      <div className="list-group list-group-flush">
+                        {followRequests.map((request) => (
+                          <div key={request._id} className="list-group-item border-0 py-2">
+                            <div className="d-flex justify-content-between align-items-center">
+                              <div className="d-flex align-items-center gap-2">
+                                <img
+                                  src={request.from.profilePicture 
+                                    ? `http://localhost:5000${request.from.profilePicture}` 
+                                    : `https://ui-avatars.com/api/?name=${encodeURIComponent(request.from.name)}&background=8b5cf6&color=fff&size=40`}
+                                  alt={request.from.name}
+                                  className="rounded-circle"
+                                  style={{ width: '32px', height: '32px', objectFit: 'cover' }}
+                                />
+                                <span className="fw-semibold">{request.from.name}</span>
+                              </div>
+                              <div className="d-flex gap-1">
+                                <button 
+                                  className="btn btn-sm btn-primary px-2 py-1" 
+                                  onClick={() => handleFollowRequest(request._id, 'accept')}
+                                  disabled={submittingComment[request._id]}
+                                >
+                                  Accept
+                                </button>
+                                <button 
+                                  className="btn btn-sm btn-outline-danger px-2 py-1" 
+                                  onClick={() => handleFollowRequest(request._id, 'reject')}
+                                  disabled={submittingComment[request._id]}
+                                >
+                                  Reject
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {followRequests.length === 0 && (
+                    <div className="mt-3 p-3 bg-light rounded-4 border text-center" style={{ backgroundColor: '#f9f7ff' }}>
+                      <small className="text-muted">
+                        <i className="bi bi-person-plus-fill me-1"></i>
+                        No follow requests
+                      </small>
+                    </div>
+                  )}
                 </div>
-              )}
+              </div>
+
+              {/* MAIN CONTENT — FULL WIDTH ON MOBILE, CENTERED ON DESKTOP */}
+              <div className="col-12 col-md-8 col-lg-6 order-0 order-md-1">
+                <div className="main-content">
+                  
+                  {/* STORIES SECTION — Always visible at top */}
+                  <div className="stories-section bg-white rounded-4 shadow-sm border p-3 mb-4">
+                    <h6 className="section-title mb-3 d-flex align-items-center">
+                      <i className="bi bi-camera-reels me-2 text-primary"></i>
+                      Stories
+                    </h6>
+                    <DiscoverPeopleSection 
+                      currentUser={user}
+                      allUsers={allUsers}
+                      stories={stories}
+                      openStoryModal={openStoryModal}
+                      addStory={() => document.getElementById('story-upload-input')?.click()}
+                    />
+                  </div>
+
+                  {/* FEED SECTION — Takes full width, no max-width */}
+                  <FeedSection 
+                    posts={posts} 
+                    postsLoading={postsLoading}
+                    commentTexts={commentTexts}
+                    submittingComment={submittingComment}
+                    showComments={showComments}
+                    toggleComments={toggleComments}
+                    handleAddComment={handleAddComment}
+                    user={user}
+                    userPostCount={userPostCount}
+                    formatDate={formatDate}
+                    fetchPosts={fetchPosts}
+                    setCommentTexts={setCommentTexts}
+                    setSubmittingComment={setSubmittingComment}
+                    setShowComments={setShowComments}
+                  />
+                </div>
+              </div>
+
+              {/* RIGHT SIDEBAR — Empty on desktop, hidden on mobile */}
+              <div className="col-lg-3 d-none d-lg-block"></div>
+
             </div>
           </div>
         </div>
+
+        {/* Hidden file input for story upload */}
+        <input 
+          id="story-upload-input"
+          type="file" 
+          accept="image/*,video/*" 
+          onChange={handleStoryUpload}
+          style={{ display: 'none' }}
+        />
       </div>
 
-      {/* Profile Modal with Notifications */}
+      {/* Modals */}
+      {showStoryModal && (
+        <StoryModal 
+          show={showStoryModal}
+          onClose={closeStoryModal}
+          currentStoryUser={currentStoryUser}
+          currentStoryIndex={currentStoryIndex}
+          setCurrentStoryIndex={setCurrentStoryIndex}
+          stories={stories}
+        />
+      )}
       {showProfileModal && (
-        <div className="modal fade show d-block" tabIndex="-1" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
-          <div className="modal-dialog modal-dialog-centered modal-xl">
-            <div className="modal-content" style={{ borderRadius: '20px', border: 'none' }}>
-              <div className="modal-header border-0 pb-0">
-                <h5 className="modal-title fw-bold">Profile Details</h5>
-                <button 
-                  type="button" 
-                  className="btn-close" 
-                  onClick={() => setShowProfileModal(false)}
-                ></button>
-              </div>
-              
-              <div className="modal-body">
-                <div className="row">
-                  {/* Left Column - Profile Info */}
-                  <div className="col-md-6">
-                    {/* Profile Picture Section */}
-                    <div className="text-center mb-4">
-                      <div className="position-relative d-inline-block">
-                        <img
-                          src={user.profilePicture ? `http://localhost:5000${user.profilePicture}` : "https://via.placeholder.com/120x120/667eea/white?text=" + user.name.charAt(0)}
-                          alt="Profile"
-                          className="rounded-circle"style={{ width: '120px', height: '120px', objectFit: 'cover', border: '4px solid #667eea' }}
-                        />
-                        <label 
-                          className="position-absolute bottom-0 end-0 btn btn-primary btn-sm rounded-circle"
-                          style={{ width: '36px', height: '36px', padding: '0' }}
-                        >
-                          <i className="bi bi-camera"></i>
-                          <input 
-                            type="file" 
-                            accept="image/*" 
-                            onChange={handleProfilePictureUpload}
-                            disabled={uploadingProfile}
-                            className="d-none"
-                          />
-                        </label>
-                        {uploadingProfile && (
-                          <div className="position-absolute top-50 start-50 translate-middle">
-                            <div className="spinner-border text-primary" role="status">
-                              <span className="visually-hidden">Uploading...</span>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
+        <ProfileModal 
+          user={user}
+          bio={bio}
+          setBio={setBio}
+          updating={updating}
+          uploadingProfile={uploadingProfile}
+          handleUpdateBio={handleUpdateBio}
+          handleProfilePictureUpload={handleProfilePictureUpload}
+          onLogout={onLogout}
+          onClose={() => setShowProfileModal(false)}
+          notifications={notifications}
+          followRequests={followRequests}
+          handleFollowRequest={handleFollowRequest}
+          formatDate={formatDate}
+        />
+      )}
+      {showMessagesModal && (
+        <Messages 
+          user={user} 
+          onClose={() => setShowMessagesModal(false)} 
+        />
+      )}
 
-                    {/* User Details */}
-                    <div className="row">
-                      <div className="col-12 mb-3">
-                        <label className="form-label fw-semibold text-muted small">Full Name</label>
-                        <div className="form-control-plaintext border rounded p-2 bg-light">{user.name}</div>
-                      </div>
-                      <div className="col-12 mb-3">
-                        <label className="form-label fw-semibold text-muted small">Email</label>
-                        <div className="form-control-plaintext border rounded p-2 bg-light">{user.email}</div>
-                      </div>
-                    </div>
-
-                    {/* Bio Section */}
-                    <div className="mb-4">
-                      <label className="form-label fw-semibold text-muted small">Bio</label>
-                      <textarea
-                        value={bio}
-                        onChange={(e) => setBio(e.target.value)}
-                        className="form-control"
-                        rows="4"
-                        style={{ borderRadius: '12px', resize: 'none' }}
-                        placeholder="Tell others about yourself..."
+      {/* MODALS FOR FOLLOWERS & FOLLOWING LIST — SIMPLE OVERLAY */}
+      {showFollowersModal && (
+        <div 
+          onClick={() => setShowFollowersModal(false)}
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0,0,0,0.7)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1001,
+            padding: '20px'
+          }}
+        >
+          <div 
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: '#fff',
+              borderRadius: '20px',
+              width: '95%',
+              maxWidth: '500px',
+              maxHeight: '80vh',
+              overflowY: 'auto',
+              boxShadow: '0 10px 30px rgba(0,0,0,0.3)',
+              position: 'relative'
+            }}
+          >
+            <div className="p-3 border-bottom d-flex justify-content-between align-items-center">
+              <h5 className="mb-0 fw-bold">Followers</h5>
+              <button 
+                onClick={() => setShowFollowersModal(false)}
+                className="btn btn-sm"
+                style={{ background: 'none', border: 'none', fontSize: '1.5rem', color: '#666' }}
+              >
+                ×
+              </button>
+            </div>
+            <div className="p-3">
+              {Array.isArray(user.followers) && user.followers.length > 0 ? (
+                user.followers.map(followerId => {
+                  const follower = allUsers.find(u => u._id === followerId);
+                  if (!follower) return null;
+                  return (
+                    <div key={followerId} className="d-flex align-items-center gap-3 p-2 mb-2 rounded" style={{ backgroundColor: '#f8f9fa' }}>
+                      <img
+                        src={follower.profilePicture 
+                          ? `http://localhost:5000${follower.profilePicture}` 
+                          : `https://ui-avatars.com/api/?name=${encodeURIComponent(follower.name)}&background=8b5cf6&color=fff&size=40`}
+                        alt={follower.name}
+                        className="rounded-circle"
+                        style={{ width: '40px', height: '40px', objectFit: 'cover' }}
                       />
-                      <div className="mt-2">
-                        <button 
-                          onClick={handleUpdateBio}
-                          disabled={updating}
-                          className="btn btn-success btn-sm"
-                        >
-                          {updating ? (
-                            <>
-                              <span className="spinner-border spinner-border-sm me-1" role="status"></span>
-                              Saving...
-                            </>
-                          ) : (
-                            <>
-                              <i className="bi bi-check-lg me-1"></i>
-                              Save Bio
-                            </>
-                          )}
-                        </button>
+                      <div className="flex-grow-1">
+                        <h6 className="mb-0 fw-semibold">{follower.name}</h6>
+                        <small className="text-muted">Follows you</small>
                       </div>
                     </div>
-
-                    {/* Activity Stats */}
-                    <div className="row text-center">
-                      <div className="col-4">
-                        <div className="card border-0 bg-primary text-white h-100">
-                          <div className="card-body py-3">
-                            <h4 className="fw-bold mb-0">{userPostCount}</h4>
-                            <small>Posts</small>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="col-4">
-                        <div className="card border-0 bg-success text-white h-100">
-                          <div className="card-body py-3">
-                            <h4 className="fw-bold mb-0">{user.followers}</h4>
-                            <small>Followers</small>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="col-4">
-                        <div className="card border-0 bg-info text-white h-100">
-                          <div className="card-body py-3">
-                            <h4 className="fw-bold mb-0">{user.following}</h4>
-                            <small>Following</small>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Right Column - Notifications */}
-                  <div className="col-md-6">
-                    <div className="card border-0 bg-light h-100">
-                      <div className="card-header bg-transparent border-0">
-                        <div className="d-flex justify-content-between align-items-center">
-                          <h6 className="mb-0 fw-bold">
-                            <i className="bi bi-bell me-2"></i>
-                            Notifications
-                          </h6>
-                          {notifications.length > 0 && (
-                            <span className="badge bg-primary rounded-pill">{notifications.length}</span>
-                          )}
-                        </div>
-                      </div>
-                      <div className="card-body" style={{ maxHeight: '400px', overflowY: 'auto' }}>
-                        {/* Follow Requests */}
-                        {followRequests.length > 0 && (
-                          <div className="mb-4">
-                            <h6 className="fw-semibold text-primary mb-3">Follow Requests</h6>
-                            {followRequests.map((request) => (
-                              <div key={request._id} className="d-flex align-items-center justify-content-between bg-white rounded p-3 mb-2 shadow-sm">
-                                <div className="d-flex align-items-center">
-                                  <img
-                                    src={request.from.profilePicture ? `http://localhost:5000${request.from.profilePicture}` : "https://via.placeholder.com/40x40/667eea/white?text=" + request.from.name.charAt(0)}
-                                    alt={request.from.name}
-                                    className="rounded-circle me-3"
-                                    style={{ width: '40px', height: '40px', objectFit: 'cover' }}
-                                  />
-                                  <div>
-                                    <h6 className="mb-0 fw-semibold">{request.from.name}</h6>
-                                    <small className="text-muted">wants to follow you</small>
-                                  </div>
-                                </div>
-                                <div className="d-flex gap-2">
-                                  <button
-                                    className="btn btn-success btn-sm rounded-pill"
-                                    onClick={() => handleFollowRequest(request._id, 'accept')}
-                                  >
-                                    <i className="bi bi-check-lg"></i>
-                                  </button>
-                                  <button
-                                    className="btn btn-danger btn-sm rounded-pill"
-                                    onClick={() => handleFollowRequest(request._id, 'reject')}
-                                  >
-                                    <i className="bi bi-x-lg"></i>
-                                  </button>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-
-                        {/* Other Notifications */}
-                        {notifications.length > 0 && (
-                          <div>
-                            <h6 className="fw-semibold text-info mb-3">Recent Activity</h6>
-                            {notifications.map((notification, index) => (
-                              <div key={index} className="d-flex align-items-center bg-white rounded p-3 mb-2 shadow-sm">
-                                <div className="me-3">
-                                  {notification.type === 'follow_accepted' && (
-                                    <i className="bi bi-person-check text-success" style={{ fontSize: '1.5rem' }}></i>
-                                  )}
-                                  {notification.type === 'new_follower' && (
-                                    <i className="bi bi-person-plus text-primary" style={{ fontSize: '1.5rem' }}></i>
-                                  )}
-                                  {notification.type === 'post_reaction' && (
-                                    <i className="bi bi-heart text-danger" style={{ fontSize: '1.5rem' }}></i>
-                                  )}
-                                  {notification.type === 'post_comment' && (
-                                    <i className="bi bi-chat text-info" style={{ fontSize: '1.5rem' }}></i>
-                                  )}
-                                </div>
-                                <div className="flex-grow-1">
-                                  <p className="mb-1" style={{ fontSize: '0.9rem' }}>{notification.message}</p>
-                                  <small className="text-muted">{formatDate(notification.createdAt)}</small>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-
-                        {/* Empty State */}
-                        {followRequests.length === 0 && notifications.length === 0 && (
-                          <div className="text-center text-muted py-5">
-                            <i className="bi bi-bell-slash" style={{ fontSize: '3rem' }}></i>
-                            <h6 className="mt-3">No notifications</h6>
-                            <p className="small">You're all caught up!</p>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="modal-footer border-0 pt-0">
-                <button 
-                  type="button" 
-                  className="btn btn-secondary rounded-pill px-4"
-                  onClick={() => setShowProfileModal(false)}
-                >
-                  Close
-                </button>
-                <button 
-                  onClick={onLogout}
-                  className="btn btn-danger rounded-pill px-4"
-                >
-                  <i className="bi bi-box-arrow-right me-1"></i>
-                  Logout
-                </button>
-              </div>
+                  );
+                })
+              ) : (
+                <p className="text-center text-muted py-4">No followers yet.</p>
+              )}
             </div>
           </div>
         </div>
       )}
 
+      {showFollowingModal && (
+        <div 
+          onClick={() => setShowFollowingModal(false)}
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0,0,0,0.7)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1001,
+            padding: '20px'
+          }}
+        >
+          <div 
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: '#fff',
+              borderRadius: '20px',
+              width: '95%',
+              maxWidth: '500px',
+              maxHeight: '80vh',
+              overflowY: 'auto',
+              boxShadow: '0 10px 30px rgba(0,0,0,0.3)',
+              position: 'relative'
+            }}
+          >
+            <div className="p-3 border-bottom d-flex justify-content-between align-items-center">
+              <h5 className="mb-0 fw-bold">Following</h5>
+              <button 
+                onClick={() => setShowFollowingModal(false)}
+                className="btn btn-sm"
+                style={{ background: 'none', border: 'none', fontSize: '1.5rem', color: '#666' }}
+              >
+                ×
+              </button>
+            </div>
+            <div className="p-3">
+              {Array.isArray(user.following) && user.following.length > 0 ? (
+                user.following.map(followingId => {
+                  const following = allUsers.find(u => u._id === followingId);
+                  if (!following) return null;
+                  return (
+                    <div key={followingId} className="d-flex align-items-center gap-3 p-2 mb-2 rounded" style={{ backgroundColor: '#f8f9fa' }}>
+                      <img
+                        src={following.profilePicture 
+                          ? `http://localhost:5000${following.profilePicture}` 
+                          : `https://ui-avatars.com/api/?name=${encodeURIComponent(following.name)}&background=8b5cf6&color=fff&size=40`}
+                        alt={following.name}
+                        className="rounded-circle"
+                        style={{ width: '40px', height: '40px', objectFit: 'cover' }}
+                      />
+                      <div className="flex-grow-1">
+                        <h6 className="mb-0 fw-semibold">{following.name}</h6>
+                        <small className="text-muted">You follow them</small>
+                      </div>
+                    </div>
+                  );
+                })
+              ) : (
+                <p className="text-center text-muted py-4">You aren't following anyone yet.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Custom SocialSphere Styles */}
+      <style jsx>{`
+        .socialsphere-dashboard {
+          min-height: 100vh;
+          background: #fafafa;
+          position: relative;
+        }
+        .dashboard-background {
+          position: fixed;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 25%, #a855f7 50%, #c084fc 75%, #e879f9 100%);
+          z-index: -2;
+        }
+        .bg-pattern {
+          position: absolute;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          background-image: 
+            radial-gradient(circle at 25% 25%, rgba(255, 255, 255, 0.1) 0%, transparent 50%),
+            radial-gradient(circle at 75% 75%, rgba(255, 255, 255, 0.05) 0%, transparent 50%);
+          animation: float 20s ease-in-out infinite;
+        }
+
+        /* NAVIGATION */
+        .socialsphere-nav {
+          background: rgba(255, 255, 255, 0.95);
+          backdrop-filter: blur(20px);
+          border-bottom: 1px solid rgba(139, 92, 246, 0.1);
+          padding: 1rem 0;
+          position: sticky;
+          top: 0;
+          z-index: 1000;
+          box-shadow: 0 4px 20px rgba(139, 92, 246, 0.1);
+        }
+        .nav-content {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        }
+        .nav-brand {
+          display: flex;
+          align-items: center;
+          gap: 0.75rem;
+          font-weight: 800;
+          font-size: 1.5rem;
+          color: #8b5cf6;
+          cursor: pointer;
+          transition: all 0.3s ease;
+        }
+        .nav-brand:hover {
+          transform: scale(1.05);
+        }
+        .brand-icon {
+          font-size: 2rem;
+          background: linear-gradient(45deg, #8b5cf6, #c084fc);
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+          background-clip: text;
+        }
+        .brand-text {
+          background: linear-gradient(45deg, #6366f1, #8b5cf6);
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+          background-clip: text;
+        }
+        .nav-actions {
+          display: flex;
+          align-items: center;
+          gap: 1rem;
+        }
+        .nav-btn {
+          width: 44px;
+          height: 44px;
+          border-radius: 50%;
+          border: none;
+          background: linear-gradient(45deg, #8b5cf6, #c084fc);
+          color: white;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 1.1rem;
+          cursor: pointer;
+          transition: all 0.3s ease;
+          box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3);
+        }
+        .nav-btn:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 8px 25px rgba(139, 92, 246, 0.4);
+        }
+        .nav-profile {
+          width: 44px;
+          height: 44px;
+          border-radius: 50%;
+          overflow: hidden;
+          cursor: pointer;
+          border: 3px solid transparent;
+          background: linear-gradient(45deg, #8b5cf6, #c084fc);
+          padding: 2px;
+          transition: all 0.3s ease;
+        }
+        .nav-profile:hover {
+          transform: scale(1.1);
+          box-shadow: 0 8px 25px rgba(139, 92, 246, 0.4);
+        }
+        .nav-profile img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          border-radius: 50%;
+          background: white;
+        }
+        .notification-dot {
+          position: absolute;
+          top: -2px;
+          right: -2px;
+          width: 12px;
+          height: 12px;
+          background: #ef4444;
+          border-radius: 50%;
+          border: 2px solid white;
+        }
+
+        /* DASHBOARD CONTENT */
+        .dashboard-content {
+          padding: 2rem 0;
+          position: relative;
+          z-index: 1;
+        }
+        .sidebar-content {
+          position: sticky;
+          top: 120px;
+          height: fit-content;
+        }
+        .profile-card {
+          background: white;
+          border-radius: 20px;
+          padding: 1.5rem;
+          margin-bottom: 1.5rem;
+          box-shadow: 0 8px 30px rgba(139, 92, 246, 0.1);
+          border: 1px solid rgba(139, 92, 246, 0.1);
+        }
+        .profile-header {
+          text-align: center;
+          margin-bottom: 1.5rem;
+        }
+        .profile-avatar-container {
+          background: linear-gradient(45deg, #8b5cf6, #c084fc);
+          border-radius: 50%;
+          padding: 3px;
+          display: inline-block;
+        }
+        .profile-avatar {
+          width: 80px;
+          height: 80px;
+          border-radius: 50%;
+          object-fit: cover;
+          background: white;
+        }
+        .profile-name {
+          font-size: 1.25rem;
+          font-weight: 700;
+          color: #1f2937;
+          margin-bottom: 0.5rem;
+        }
+        .profile-bio {
+          color: #6b7280;
+          font-size: 0.9rem;
+          line-height: 1.4;
+          margin: 0;
+        }
+        .cursor-pointer {
+          cursor: pointer;
+        }
+        .stories-section {
+          background: white;
+          border-radius: 20px;
+          padding: 1.5rem;
+          margin-bottom: 1.5rem;
+          box-shadow: 0 8px 30px rgba(139, 92, 246, 0.1);
+          border: 1px solid rgba(139, 92, 246, 0.1);
+        }
+        .section-title {
+          font-size: 1rem;
+          font-weight: 700;
+          color: #1f2937;
+          margin-bottom: 1rem;
+          display: flex;
+          align-items: center;
+        }
+        .section-title i {
+          color: #8b5cf6;
+        }
+
+        /* RESPONSIVE ADJUSTMENTS */
+        @media (max-width: 768px) {
+          .sidebar-content {
+            position: static;
+            padding: 0;
+            margin-top: 1rem;
+          }
+          .stories-section {
+            margin: 0 -15px 1.5rem;
+            border-radius: 0;
+            border-left: none;
+            border-right: none;
+          }
+          .profile-card {
+            margin-bottom: 1rem;
+            border-radius: 12px;
+          }
+          .nav-brand {
+            font-size: 1.25rem;
+          }
+          .brand-icon {
+            font-size: 1.5rem;
+          }
+          .dashboard-content {
+            padding: 1rem 0;
+          }
+          .profile-avatar {
+            width: 60px;
+            height: 60px;
+          }
+        }
+
+        @keyframes float {
+          0%, 100% { transform: translateY(0px) rotate(0deg); }
+          50% { transform: translateY(-10px) rotate(2deg); }
+        }
+      `}</style>
+
+      {/* Bootstrap JS */}
       <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/js/bootstrap.bundle.min.js"></script>
     </>
   );

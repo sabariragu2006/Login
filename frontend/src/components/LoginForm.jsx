@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Eye, EyeOff, Mail, Lock, Sparkles } from 'lucide-react';
-import '../index.css'; // Import normal CSS
+import '../index.css';
 import { useNavigate } from 'react-router-dom';
 
 const LoginForm = ({ onLogin }) => {
@@ -11,14 +11,59 @@ const LoginForm = ({ onLogin }) => {
 
   const navigate = useNavigate();
 
+  // ✅ Handle Input Change (with trim for spaces)
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
+    setFormData((prev) => ({ ...prev, [name]: value.trimStart() }));
   };
 
+// ✅ Advanced Email Validation
+const validateEmail = (email) => {
+  // Basic structure check
+  const basicRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!basicRegex.test(email)) return false;
+
+  // Must have valid TLD like .com, .in, .org, .net
+  const domainRegex = /\.(com|in|org|net|edu|gov|co)$/i;
+  if (!domainRegex.test(email)) return false;
+
+  // Prevent multiple dots in a row (e.g., test..user@mail.com)
+  if (email.includes('..')) return false;
+
+  // Prevent leading/trailing dot or @
+  if (email.startsWith('.') || email.endsWith('.') || email.endsWith('@')) {
+    return false;
+  }
+
+  return true;
+};
+
+
+  // ✅ Handle Form Submit
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+
+    const { email, password } = formData;
+
+    // Corner Case 1: Empty Fields
+    if (!email || !password) {
+      setError('Email and password are required');
+      return;
+    }
+
+    // Corner Case 2: Invalid Email Format
+    if (!validateEmail(email)) {
+      setError('Please enter a valid email address');
+      return;
+    }
+
+    // Corner Case 3: Weak Password
+    if (password.length < 6) {
+      setError('Password must be at least 6 characters long');
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -28,16 +73,30 @@ const LoginForm = ({ onLogin }) => {
         body: JSON.stringify(formData),
       });
 
-      const result = await response.json();
+      let result;
+      try {
+        result = await response.json();
+      } catch {
+        throw new Error('Invalid server response (not JSON)');
+      }
 
+      // Corner Case 4: Handle Unauthorized / Bad Request
       if (!response.ok) {
         setError(result.message || 'Invalid email or password');
-      } else {
-        // Call the onLogin function passed from App component
-        onLogin(result.user);
-        navigate('/dashboard');
+        return;
       }
+
+      // Corner Case 5: Unexpected Response Structure
+      if (!result.user) {
+        setError('Unexpected server response');
+        return;
+      }
+
+      // ✅ Successful login
+      onLogin(result.user);
+      navigate('/dashboard');
     } catch (err) {
+      // Corner Case 6: Server/Network Failures
       setError('Server error: ' + err.message);
     } finally {
       setLoading(false);
@@ -46,7 +105,6 @@ const LoginForm = ({ onLogin }) => {
 
   return (
     <div className="login-page">
-      {/* Background circles */}
       <div className="bg-circles">
         <div className="circle purple"></div>
         <div className="circle blue"></div>
@@ -54,13 +112,12 @@ const LoginForm = ({ onLogin }) => {
       </div>
 
       <div className="login-container">
-        {/* Logo */}
         <div className="login-logo">
           <div className="logo-box">
             <Sparkles className="logo-icon" />
           </div>
-          <h1>SocialSphere</h1>
-          <p>Connect with your world</p>
+          <h1>Welcome Back</h1>
+          <p>Login to your account</p>
         </div>
 
         <form onSubmit={handleSubmit} className="login-form">
@@ -92,28 +149,28 @@ const LoginForm = ({ onLogin }) => {
               type="button"
               className="toggle-btn"
               onClick={() => setShowPassword(!showPassword)}
+              disabled={loading}
             >
               {showPassword ? <EyeOff /> : <Eye />}
             </button>
           </div>
 
-          {/* Error */}
+          {/* Error Message */}
           {error && <div className="error-box">{error}</div>}
 
-          {/* Button */}
+          {/* Submit Button */}
           <button type="submit" className="login-btn" disabled={loading}>
-            {loading ? 'Signing In...' : 'Sign In'}
+            {loading ? 'Logging in...' : 'Login'}
           </button>
         </form>
 
         <div className="extra-links">
           <p>
-            Don't have an account?{' '}
-            <button onClick={() => navigate('/register')}>
-              Create one now
+            Don’t have an account?{' '}
+            <button onClick={() => navigate('/register')} disabled={loading}>
+              Sign up here
             </button>
           </p>
-          <button className="forgot-btn">Forgot your password?</button>
         </div>
       </div>
     </div>
